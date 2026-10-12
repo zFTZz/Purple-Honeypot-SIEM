@@ -1,0 +1,4 @@
+honeypot/host.key
+honeypot/logs/
+__pycache__/
+*.pyc
