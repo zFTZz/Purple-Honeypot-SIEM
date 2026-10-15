@@ -1,7 +1,8 @@
 """
 PROJETO 1 - ssh_honeypot.py v2 (SSH DE VERDADE)
 Agora aceita o comando `ssh` real, nao so python/nc.
-Como: usa paramiko pra fazer o handshake cripto igual OpenSSH, mas aceita QUALQUER senha e grava tudo.
+Como: usa paramiko pra fazer o handshake cripto igual OpenSSH. 1a senha SEMPRE falha
+(igual server real), da 2a em diante aceita QUALQUER senha e grava tudo.
 Rodar: python honeypot/ssh_honeypot.py -> ssh admin@localhost -p 2222 (senha qualquer)
 """
 import socket
@@ -75,6 +76,8 @@ def responder(comando: str) -> str:
 def gravar_log(evento: dict):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     evento["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    if "src_ip" in evento:
+        evento["srcip"] = evento["src_ip"]  # alias p/ same_srcip das regras Wazuh
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(evento) + "\n")
 
@@ -93,10 +96,18 @@ class ServidorFake(paramiko.ServerInterface):
     def __init__(self, ip):
         self.ip = ip
         self.user = "unknown"
+        self.tentativas = 0
 
     def check_auth_password(self, username, password):
-        # DECISAO: aceita tudo pra prender o atacante mais tempo e logar a senha
+        # DECISAO: 1a tentativa SEMPRE falha (igual server real com senha errada).
+        # Hydra abre 1 conexao por tentativa = cada try vira 1 ssh.login_failed (bruteforce real no log).
+        # Manual: erra a 1a, entra na 2a. Sem falha nao existe regra de bruteforce.
+        self.tentativas += 1
         self.user = username
+        if self.tentativas == 1:
+            gravar_log({"type": "ssh.login_failed", "src_ip": self.ip, "user": username, "password": password})
+            print(f"[FALHA] {self.ip} user={username} pass={password}")
+            return paramiko.AUTH_FAILED
         gravar_log({"type": "ssh.login", "src_ip": self.ip, "user": username, "password": password})
         print(f"[LOGIN] {self.ip} user={username} pass={password}")
         return paramiko.AUTH_SUCCESSFUL

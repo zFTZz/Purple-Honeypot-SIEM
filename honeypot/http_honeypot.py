@@ -19,6 +19,8 @@ CAMINHOS_SUSPEITOS = ("/admin", "/login", "/.env", "/.git", "/config.php", "/bac
 def gravar_log(evento: dict):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     evento["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+    if "src_ip" in evento:
+        evento["srcip"] = evento["src_ip"]  # alias p/ same_srcip das regras Wazuh
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(evento) + "\n")
 
