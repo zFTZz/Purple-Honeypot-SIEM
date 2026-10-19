@@ -1,3 +1,5 @@
+#50% Concluido
+
 # Purple Honeypot & SIEM Integration
 
 Base de telemetria e detecção para **Purple Teaming**. Honeypots multi-protocolo em Python geram logs JSON, Filebeat envia para Wazuh em Docker, regras custom disparam alerta no Telegram/Teams e dashboard no Kibana mostra quem atacou.
