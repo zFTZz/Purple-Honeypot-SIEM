@@ -1,9 +1,13 @@
 # Mudanças manuais no ossec.conf (DENTRO do container — NÃO estão no git!)
 
-Se o volume `siem_wazuh-manager-etc` for apagado, refazer via `docker exec`:
+O volume `siem_wazuh-manager-etc` guarda o `/var/ossec/etc` e sobrevive a
+`docker restart`. Se o volume for apagado, refazer os blocos abaixo via
+`docker exec` (ou recriar o volume com a config default da imagem).
+
+## 1. Ingestão dos logs do honeypot (JSON lines)
 
 ```sh
-cat >> /var/ossec/etc/ossec.conf <<'EOF'
+docker exec -i wazuh-manager tee -a /var/ossec/etc/ossec.conf >/dev/null <<'EOF'
 
 <!-- Projeto 1: honeypot logs em JSON -->
 <ossec_config>
@@ -17,12 +21,35 @@ cat >> /var/ossec/etc/ossec.conf <<'EOF'
   </localfile>
 </ossec_config>
 EOF
-/var/ossec/bin/wazuh-analysisd -t && echo CONFIG-OK
+docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-analysisd -t && echo CONFIG-OK'
 docker restart wazuh-manager
 ```
 
-O que JÁ está no git e volta sozinho: `docker-compose.yml` (mounts),
-`custom_rules/bruteforce_custom.xml` (regras 100100/100101).
+O `http.log` precisa existir. Se ainda não rodou o honeypot HTTP, crie vazio:
 
-Débito: `filebeat.yml` vazio (pipeline hoje lê direto via mount, sem Filebeat).
-Debug temporário já revertido: `logall yes` (era só p/ provar ingestão).
+```powershell
+New-Item -ItemType File -Force honeypot/logs/http.log
+```
+
+## 2. O que já está no git e volta sozinho
+
+- `siem/docker-compose.yml`: mounts das regras e de `honeypot/logs`.
+- `siem/custom_rules/bruteforce_custom.xml`: regras 100100-100104.
+- `.gitignore`: `honeypot/logs/` e `alerting/.env` não vão pro repositório.
+
+## 3. Debug temporário
+
+`logall yes` no ossec.conf grava todos os eventos em `archives.json`; foi usado
+só para provar a ingestão e depois revertido. Não deixe ligado em produção
+(disco e dado sensível).
+
+```sh
+docker exec wazuh-manager grep -n logall /var/ossec/etc/ossec.conf
+```
+
+## 4. Validação rápida
+
+```powershell
+docker exec wazuh-manager sh -c "/var/ossec/bin/wazuh-analysisd -t"
+docker exec wazuh-manager sh -c "grep '100101' /var/ossec/logs/alerts/alerts.json | tail -1"
+```
