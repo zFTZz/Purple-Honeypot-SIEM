@@ -19,22 +19,27 @@ docker exec -i wazuh-manager tee -a /var/ossec/etc/ossec.conf >/dev/null <<'EOF'
     <log_format>json</log_format>
     <location>/var/log/honeypot/http.log</location>
   </localfile>
+  <localfile>
+    <log_format>json</log_format>
+    <location>/var/log/honeypot/ftp.log</location>
+  </localfile>
 </ossec_config>
 EOF
 docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-analysisd -t && echo CONFIG-OK'
 docker restart wazuh-manager
 ```
 
-O `http.log` precisa existir. Se ainda não rodou o honeypot HTTP, crie vazio:
+Os arquivos `http.log` e `ftp.log` precisam existir. Se ainda não rodou os honeypots, crie vazios:
 
 ```powershell
 New-Item -ItemType File -Force honeypot/logs/http.log
+New-Item -ItemType File -Force honeypot/logs/ftp.log
 ```
 
 ## 2. O que já está no git e volta sozinho
 
 - `siem/docker-compose.yml`: mounts das regras e de `honeypot/logs`.
-- `siem/custom_rules/bruteforce_custom.xml`: regras 100100-100104.
+- `siem/custom_rules/bruteforce_custom.xml`: regras 100100-100110 (SSH/HTTP/FTP).
 - `.gitignore`: `honeypot/logs/` e `alerting/.env` não vão pro repositório.
 
 ## 3. Debug temporário

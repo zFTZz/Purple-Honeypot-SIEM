@@ -58,4 +58,58 @@
     <group>attack_sequence,correlation</group>
   </rule>
 
+  <!-- ===================== REGRAS HTTP (http.request) ===================== -->
+
+  <!-- 100105: user-agent de ferramenta de scanner (sqlmap, nikto, nmap, ffuf...).
+       Precisa vir ANTES da 100106/100107: o Wazuh dispara a primeira regra que
+       casa, então o scan com POST é atribuído à ferramenta (mais informativo). -->
+  <rule id="100105" level="8">
+    <field name="type" type="pcre2">^http\.request$</field>
+    <field name="user_agent" type="pcre2">(?i)(sqlmap|nikto|nmap|masscan|ffuf|gobuster|dirbuster|wfuzz|zgrab|acunetix|nessus|openvas|dirsearch|feroxbuster)</field>
+    <description>Honeypot HTTP: acesso com User-Agent de ferramenta de scan/vulnerabilidade.</description>
+    <group>reconnaissance,web,attack</group>
+  </rule>
+
+  <!-- 100106: acesso a isca sensivel ou path traversal. -->
+  <rule id="100106" level="8">
+    <field name="type" type="pcre2">^http\.request$</field>
+    <field name="path" type="pcre2">(?i)(\.env|\.git|/admin|config\.php|/backup|\.\./)</field>
+    <description>Honeypot HTTP: acesso a caminho sensivel (isca) ou path traversal.</description>
+    <group>web,attack</group>
+  </rule>
+
+  <!-- 100107: POST recebido. Em honeypot todo POST e suspeito (tentativa de
+       login/formulario em sistema que nao existe de verdade). -->
+  <rule id="100107" level="6">
+    <field name="type" type="pcre2">^http\.request$</field>
+    <field name="method" type="pcre2">^POST$</field>
+    <description>Honeypot HTTP: requisicao POST recebida (tentativa de submissao em formulario falso).</description>
+    <group>web</group>
+  </rule>
+
+  <!-- 100108: scan sequencial — mesmo IP bateu em 10+ caminhos sensiveis em 60s.
+       Usa o mesmo principio da 100101 (frequency + same_source_ip). -->
+  <rule id="100108" level="10" frequency="10" timeframe="60">
+    <if_matched_sid>100106</if_matched_sid>
+    <same_source_ip />
+    <description>Honeypot HTTP: possivel scan/fuzzing, 10+ acessos a caminhos sensiveis do mesmo IP em 1 minuto.</description>
+    <group>web,brute_force,reconnaissance</group>
+  </rule>
+
+  <!-- ===================== REGRAS FTP (ftp.login*) ===================== -->
+
+  <!-- 100109: falha de login FTP (base p/ correlacao, espelho da 100100). -->
+  <rule id="100109" level="5">
+    <field name="type" type="pcre2">^ftp\.login_failed$</field>
+    <description>Honeypot FTP: tentativa de login falhou.</description>
+  </rule>
+
+  <!-- 100110: brute-force FTP — 5+ falhas do mesmo IP em 120s (espelho da 100101). -->
+  <rule id="100110" level="10" frequency="5" timeframe="120">
+    <if_matched_sid>100109</if_matched_sid>
+    <same_source_ip />
+    <description>Honeypot FTP: possivel brute-force, 5+ falhas do mesmo IP em 2 minutos.</description>
+    <group>authentication_failures,brute_force</group>
+  </rule>
+
 </group>

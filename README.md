@@ -6,7 +6,7 @@ Base de telemetria e detecção para **Purple Teaming**: honeypots em Python ger
 
 ## Stack
 
-- **Python** — honeypot SSH real (paramiko, porta 2222) + honeypot HTTP (porta 8080)
+- **Python** — honeypot SSH real (paramiko, porta 2222) + honeypot HTTP (porta 8080) + honeypot FTP (porta 2121)
 - **Docker Compose** — Wazuh 4.7.2 (manager + indexer + dashboard)
 - **Wazuh localfile** — lê `honeypot/logs/*.log` em JSON e aplica as regras
 - **Filebeat** — embutido no container do Wazuh, envia os alertas para o indexer (padrão oficial da stack); não é um container separado
@@ -16,7 +16,7 @@ Base de telemetria e detecção para **Purple Teaming**: honeypots em Python ger
 ## Arquitetura
 
 ```
-Atacante -> Honeypot SSH/HTTP (Python) -> honeypot/logs/*.log (JSON lines)
+Atacante -> Honeypot SSH/HTTP/FTP (Python) -> honeypot/logs/*.log (JSON lines)
               |
               v
      Wazuh manager (localfile JSON) -> regras custom
@@ -116,15 +116,37 @@ tentativa seguinte e executa `whoami`. Isso gera `ssh.login_failed`,
 `ssh.login` e `ssh.command` no `ssh.log`, e as regras 100101 + 100104 disparam.
 Ele é só uma ferramenta de laboratório; o honeypot continua sendo o alvo.
 
-## Regras custom (5)
+### 8. Honeypots HTTP e FTP
+
+```powershell
+# Terminal extra: HTTP na 8080
+python honeypot/http_honeypot.py
+# abra http://localhost:8080/.env e http://localhost:8080/admin
+
+# Terminal extra: FTP na 2121 (21 exigiria admin no Windows)
+python honeypot/ftp_honeypot.py
+# ftp admin@localhost -p 2121  (1a senha falha, 2a entra; LIST/RETR mostram isca)
+```
+
+O FTP segue a mesma lógica do SSH: a primeira senha de cada conexão falha de
+propósito para alimentar a regra de brute-force (100110). Log em
+`honeypot/logs/ftp.log`.
+
+## Regras custom (11)
 
 | Regra | Nível | O que detecta |
 |---|---:|---|
 | `100100` | 5 | uma falha de login SSH (base para correlação) |
-| `100101` | 10 | brute-force: 5+ falhas do mesmo IP em 120s |
-| `100102` | 8 | comando de reconhecimento (`id`, `whoami`, `uname`, `cat /etc/passwd`) |
+| `100101` | 10 | brute-force SSH: 5+ falhas do mesmo IP em 120s |
+| `100102` | 8 | comando de reconhecimento SSH (`id`, `whoami`, `uname`, `cat /etc/passwd`) |
 | `100103` | 12 | login **bem-sucedido** vindo de fora das faixas internas (anomalia de origem) |
-| `100104` | 12 | sequência: falha de login seguida de comando de reconhecimento do mesmo IP |
+| `100104` | 12 | sequência SSH: falha de login seguida de comando de reconhecimento do mesmo IP |
+| `100105` | 8 | HTTP com User-Agent de ferramenta de scan (sqlmap, nikto, nmap, ffuf...) |
+| `100106` | 8 | HTTP em caminho sensível (isca: `/.env`, `/admin`...) ou path traversal |
+| `100107` | 6 | HTTP POST recebido (todo POST em honeypot é suspeito) |
+| `100108` | 10 | scan HTTP: 10+ acessos a caminhos sensíveis do mesmo IP em 60s |
+| `100109` | 5 | falha de login FTP (base para correlação) |
+| `100110` | 10 | brute-force FTP: 5+ falhas do mesmo IP em 120s |
 
 Arquivo: `siem/custom_rules/bruteforce_custom.xml`.
 
@@ -160,7 +182,7 @@ docker exec -e OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk wazuh-indexer b
 
 ```
 Purple-Honeypot-SIEM/
-├── honeypot/ssh_honeypot.py, http_honeypot.py, simulate_attack.py, logs/
+├── honeypot/ssh_honeypot.py, http_honeypot.py, ftp_honeypot.py, simulate_attack.py, logs/
 ├── siem/docker-compose.yml, filebeat.yml (referência), custom_rules/bruteforce_custom.xml
 ├── siem/create_dashboard.py
 ├── alerting/webhook_dispatcher.py, .env.example, teams_alert.ps1
@@ -170,9 +192,9 @@ Purple-Honeypot-SIEM/
 
 ## Status do projeto
 
-Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 5 painéis.
+Concluído e testado na mão: honeypots SSH/HTTP/FTP, simulador de ataque SSH, ingestão no Wazuh (3 protocolos), 11 regras custom (SSH/HTTP/FTP), brute-force/sequência/geo/scan disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 5 painéis.
 
-Pendente: honeypot FTP (opcional), vídeo de 2-3 min com o simulador e simulação de entrevista.
+Pendente: vídeo de 2-3 min com o simulador e simulação de entrevista.
 
 ## O que NÃO fazer
 
