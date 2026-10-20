@@ -70,27 +70,24 @@ Get-Content honeypot/logs/ssh.log -Tail 10
 ### 4. Configurar o Telegram (1 vez)
 
 1. No Telegram, fale com **@BotFather** -> `/newbot` -> escolha nome e usuário.
-2. Copie o **token** que ele devolver.
-3. Abra uma conversa com o seu bot e mande `/start`.
-4. Descubra o **chat_id** abrindo no navegador:
-   `https://api.telegram.org/bot<SEU_TOKEN>/getUpdates`
-   Procure `"chat":{"id":...}`.
-5. Edite `alerting/.env` (não vai pro git) e preencha:
+2. Copie o **token** que ele devolver e mande `/start` para o seu bot.
+3. Rode o wizard e cole o token quando ele pedir (o token não aparece na tela):
 
-```env
-TELEGRAM_BOT_TOKEN=123456:ABC...
-TELEGRAM_CHAT_ID=123456789
+```powershell
+python alerting/webhook_dispatcher.py --setup
 ```
 
-Se `alerting/.env` não existir: `Copy-Item alerting/.env.example alerting/.env`.
+O wizard salva o token em `alerting/.env`, descobre o `chat_id`, salva e já
+manda uma mensagem de teste. Se `alerting/.env` não existir:
+`Copy-Item alerting/.env.example alerting/.env`.
 
-### 5. Testar o alerta no celular
+### 5. Testar o alerta no celular de novo (opcional)
 
 ```powershell
 python alerting/webhook_dispatcher.py --test
 ```
 
-Tem que chegar uma mensagem no Telegram. Para só ver a mensagem no terminal, sem enviar:
+Para só ver a mensagem no terminal, sem enviar:
 
 ```powershell
 python alerting/webhook_dispatcher.py --test --dry-run
@@ -102,7 +99,22 @@ python alerting/webhook_dispatcher.py --test --dry-run
 python alerting/webhook_dispatcher.py --follow
 ```
 
-Deixe rodando e, em outro terminal, faça 5+ tentativas de SSH com o mesmo IP. O dispatcher lê o `alerts.json` do container e envia só o que tem nível >= 10.
+Deixe rodando e, em outro terminal, faça 6+ tentativas de SSH com o mesmo IP
+(ver explicação do lote na seção de regras). O dispatcher lê o `alerts.json` do
+container e envia só o que tem nível >= 10.
+
+### 7. Simular o ataque completo (para o vídeo)
+
+Com o honeypot rodando em um terminal e o dispatcher em outro:
+
+```powershell
+python honeypot/simulate_attack.py
+```
+
+O simulador fala SSH de verdade com o honeypot: erra 6 senhas, entra na
+tentativa seguinte e executa `whoami`. Isso gera `ssh.login_failed`,
+`ssh.login` e `ssh.command` no `ssh.log`, e as regras 100101 + 100104 disparam.
+Ele é só uma ferramenta de laboratório; o honeypot continua sendo o alvo.
 
 ## Regras custom (5)
 
@@ -112,7 +124,7 @@ Deixe rodando e, em outro terminal, faça 5+ tentativas de SSH com o mesmo IP. O
 | `100101` | 10 | brute-force: 5+ falhas do mesmo IP em 120s |
 | `100102` | 8 | comando de reconhecimento (`id`, `whoami`, `uname`, `cat /etc/passwd`) |
 | `100103` | 12 | login **bem-sucedido** vindo de fora das faixas internas (anomalia de origem) |
-| `100104` | 12 | sequência: falha de login seguida de comandos de reconhecimento do mesmo IP |
+| `100104` | 12 | sequência: falha de login seguida de comando de reconhecimento do mesmo IP |
 
 Arquivo: `siem/custom_rules/bruteforce_custom.xml`.
 
@@ -120,13 +132,15 @@ Decisões que valem entrevista:
 - `<same_source_ip />` em vez de `<same_srcip />`: a segunda não dispara com log JSON no Wazuh 4.7.2 (testado).
 - `<field type="pcre2">` com `^...$`: o match padrão casa por substring (`ssh.login` casaria `ssh.login_failed`).
 - Só uma regra dispara por evento; por isso a geo (100103) ficou no evento de login com sucesso, sem competir com a 100100.
+- A 100104 **não usa `frequency`**: uma segunda regra de frequency apontando para a 100100 consumia os eventos e impedia a 100101 de disparar. Com `if_sid` (comando atual) + `if_matched_sid` (falha anterior), ela dispara no primeiro comando de recon.
+- No teste manual, use **6 falhas**: o logcollector pode agrupar eventos em lote e a 5ª às vezes é avaliada antes de entrar na janela da 100101. A 6ª garante o disparo.
 - O dispatcher filtra por nível e tem cooldown para não mandar 20 mensagens do mesmo ataque.
 
 ## Estrutura
 
 ```
 Purple-Honeypot-SIEM/
-├── honeypot/ssh_honeypot.py, http_honeypot.py, logs/
+├── honeypot/ssh_honeypot.py, http_honeypot.py, simulate_attack.py, logs/
 ├── siem/docker-compose.yml, filebeat.yml (referência), custom_rules/bruteforce_custom.xml
 ├── alerting/webhook_dispatcher.py, .env.example, teams_alert.ps1
 ├── deploy/setup.sh
@@ -135,9 +149,9 @@ Purple-Honeypot-SIEM/
 
 ## Status do projeto
 
-Concluído e testado na mão: honeypot SSH/HTTP, ingestão no Wazuh, 5 regras custom, brute-force/geo/sequência disparando no `alerts.json`, dispatcher Wazuh -> Telegram (testado contra um mock local).
+Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, e dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104).
 
-Pendente: token real do Telegram (teste no celular), dashboard no Kibana, `setup.sh` de instalação, honeypot FTP (opcional), vídeo de 2-3 min e simulação de entrevista.
+Pendente: dashboard no Kibana, `setup.sh` de instalação, honeypot FTP (opcional), vídeo de 2-3 min com o simulador e simulação de entrevista.
 
 ## O que NÃO fazer
 

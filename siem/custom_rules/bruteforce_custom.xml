@@ -14,8 +14,10 @@
   <!-- 100101: brute-force. 5+ falhas do MESMO IP em 120s.
        ATENÇÃO: usar same_source_ip e NÃO same_srcip. Testado no Wazuh 4.7.2:
        com same_srcip a regra nunca dispara em log JSON (campo srcip em data.*).
-       ignore=60 evita 1 alerta por cada tentativa extra depois da 5a. -->
-  <rule id="100101" level="10" frequency="5" timeframe="120" ignore="60">
+       O anti-spam fica no dispatcher (cooldown), não no ignore do Wazuh.
+       No teste manual, envie 6 falhas: o logcollector pode agrupar eventos em
+       lote e a 5ª tentativa pode ser avaliada antes de entrar na janela. -->
+  <rule id="100101" level="10" frequency="5" timeframe="120">
     <if_matched_sid>100100</if_matched_sid>
     <same_source_ip />
     <description>Honeypot SSH: possível brute-force, 5+ falhas do mesmo IP em 2 minutos.</description>
@@ -42,17 +44,17 @@
     <group>geo_anomaly,threat_intel</group>
   </rule>
 
-  <!-- 100104: sequência suspeita. Falha de login seguida de comandos pelo MESMO
-       IP em até 5 min = alguém errou senha e depois executou algo.
-       Padrão Wazuh p/ correlacionar eventos de TIPOS diferentes (igual regra 2509
-       do ruleset): if_sid = evento atual (100102 recon), if_matched_sid = evento
-       anterior (100100 falha). frequency=2 (Wazuh não aceita 1): dispara ao 2o
-       comando de recon após a falha. -->
-  <rule id="100104" level="12" frequency="2" timeframe="300">
+  <!-- 100104: sequência suspeita. Falha de login seguida de comando de
+       reconhecimento pelo MESMO IP em até 5 min.
+       IMPORTANTE: NÃO usar frequency aqui. Testado no Wazuh 4.7.2: uma segunda
+       regra de frequency apontando para 100100 "consome" os eventos e impede a
+       100101 de disparar. Sem frequency, o if_matched_sid casa a falha anterior
+       e a regra dispara já no primeiro comando de recon. -->
+  <rule id="100104" level="12" timeframe="300">
     <if_sid>100102</if_sid>
     <if_matched_sid>100100</if_matched_sid>
     <same_source_ip />
-    <description>Honeypot SSH: sequência suspeita — falha de login seguida de comandos de reconhecimento pelo mesmo IP.</description>
+    <description>Honeypot SSH: sequência suspeita — falha de login seguida de comando de reconhecimento pelo mesmo IP.</description>
     <group>attack_sequence,correlation</group>
   </rule>
 

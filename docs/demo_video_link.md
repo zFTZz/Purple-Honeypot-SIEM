@@ -7,9 +7,10 @@ Link do vídeo: (colar aqui quando subir no YouTube/Loom, ex: https://...)
 - [ ] `docker ps` mostra `wazuh-manager`, `wazuh-indexer` e `wazuh-dashboard` como `Up`
 - [ ] `alerting/.env` preenchido com token e chat_id
 - [ ] `python alerting/webhook_dispatcher.py --test` já chegou no celular
-- [ ] Honeypot SSH rodando em um terminal (PS1)
+- [ ] Honeypot SSH rodando em um terminal (PS1): `python honeypot/ssh_honeypot.py`
 - [ ] Dispatcher rodando em outro terminal (PS2): `python alerting/webhook_dispatcher.py --follow`
 - [ ] Celular/Telegram visível na gravação (ou espelhamento de tela)
+- [ ] Simulador testado (PS3): `python honeypot/simulate_attack.py`
 
 ## Roteiro
 
@@ -18,20 +19,19 @@ Link do vídeo: (colar aqui quando subir no YouTube/Loom, ex: https://...)
 - Fala: "Honeypot SSH real em Python, Wazuh em Docker e regras custom."
 
 **0:20-0:50 — ataque simulado**
-- `ssh admin@localhost -p 2222`
-- 1ª senha falha de propósito; 2ª entra.
-- Roda `whoami`, `id`, `ls`, `cat id_rsa`.
-- Fala: "A primeira falha gera o evento de autenticação; os comandos geram a sequência."
+- Em PS3: `python honeypot/simulate_attack.py`
+- Mostra o honeypot em PS1 recebendo 6 falhas de senha e depois o login + `whoami`.
+- Fala: "O simulador fala SSH de verdade com o honeypot: 6 falhas e depois um comando de reconhecimento. O IP é sempre 127.0.0.1 neste teste local."
 
 **0:50-1:20 — coleta**
-- `Get-Content honeypot/logs/ssh.log -Tail 10`
+- `Get-Content honeypot/logs/ssh.log -Tail 12`
 - Mostra JSON com `type`, `src_ip`, `user`, `command`, `timestamp`.
 - Fala: "Tudo em JSON, com IP e comando, pronto para o SIEM."
 
 **1:20-1:50 — detecção**
-- Abre o Wazuh/Kibana ou mostra `docker exec wazuh-manager tail -5 /var/ossec/logs/alerts/alerts.json`.
+- Abre o Wazuh/Kibana ou mostra `docker exec wazuh-manager tail -8 /var/ossec/logs/alerts/alerts.json`.
 - Mostra as regras 100100/100101/100102/100104 (e 100103 se fizer login externo).
-- Fala: "A regra 100101 correlaciona 5 falhas do mesmo IP; a 100104 correlaciona falha + recon."
+- Fala: "A 100101 correlaciona 5+ falhas do mesmo IP; a 100104 casa a falha anterior com o comando de recon. Enviei 6 falhas porque o Wazuh pode agrupar logs em lote."
 
 **1:50-2:20 — alerta no celular**
 - Mostra a notificação do Telegram chegando com regra, IP, usuário e ação sugerida.
@@ -48,6 +48,7 @@ Link do vídeo: (colar aqui quando subir no YouTube/Loom, ex: https://...)
 ## Erros comuns na gravação
 
 - Esquecer de reiniciar o dispatcher depois de mudar o `.env`.
-- Fazer só 1 tentativa de SSH e esperar brute-force (a 100101 precisa de 5+ falhas).
+- Fazer só 1 tentativa de SSH e esperar brute-force (a 100101 precisa de 5+ falhas; use 6 no simulador).
+- Rodar o simulador sem o honeypot em execução: ele avisa que não conseguiu conectar.
 - Gravar o token do Telegram na tela. Deixe o `.env` fechado.
 - Terminal pequeno: aumente a fonte antes de gravar.

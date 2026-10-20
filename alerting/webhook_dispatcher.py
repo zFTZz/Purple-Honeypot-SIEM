@@ -23,6 +23,7 @@ Credenciais: alerting/.env (NAO vai pro git) ou variaveis de ambiente.
 
 import argparse
 import datetime as dt
+import getpass
 import html
 import json
 import os
@@ -115,6 +116,86 @@ def montar_mensagem(alert):
 
 def telegram_configurado():
     return bool(os.getenv("TELEGRAM_BOT_TOKEN")) and bool(os.getenv("TELEGRAM_CHAT_ID"))
+
+
+def obter_atualizacoes():
+    """Chama getUpdates e devolve os chats que já falaram com o bot."""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    if not token:
+        print("[!] TELEGRAM_BOT_TOKEN não configurado no alerting/.env.")
+        return []
+    api_base = os.getenv("TELEGRAM_API_BASE", "https://api.telegram.org").rstrip("/")
+    url = f"{api_base}/bot{token}/getUpdates?limit=100&timeout=0"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            corpo = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detalhe = exc.read().decode("utf-8", errors="ignore")[:300]
+        print(f"[!] HTTP {exc.code} ao consultar o Telegram: {detalhe}")
+        return []
+    except urllib.error.URLError as exc:
+        print(f"[!] Sem conexão com o Telegram: {exc.reason}")
+        return []
+
+    if not corpo.get("ok"):
+        print(f"[!] Telegram recusou: {corpo.get('description', corpo)}")
+        return []
+
+    chats = {}
+    for update in corpo.get("result", []):
+        msg = update.get("message") or update.get("channel_post") or update.get("edited_message") or {}
+        chat = msg.get("chat") or {}
+        chat_id = chat.get("id")
+        if chat_id is None:
+            continue
+        nome = chat.get("title") or chat.get("username") or chat.get("first_name") or "sem nome"
+        chats[chat_id] = f"{chat.get('type', '?')} | {nome}"
+    return list(chats.items())
+
+
+def salvar_env(chave, valor):
+    """Atualiza ou adiciona CHAVE=valor no alerting/.env, sem tocar no token."""
+    if not ENV_FILE.exists():
+        print(f"[!] {ENV_FILE} não existe. Copie de .env.example primeiro.")
+        return False
+    linhas = ENV_FILE.read_text(encoding="utf-8").splitlines()
+    achou = False
+    novas = []
+    for linha in linhas:
+        if linha.strip().startswith(f"{chave}="):
+            novas.append(f"{chave}={valor}")
+            achou = True
+        else:
+            novas.append(linha)
+    if not achou:
+        novas.append(f"{chave}={valor}")
+    ENV_FILE.write_text("\n".join(novas) + "\n", encoding="utf-8")
+    print(f"[+] {chave} salvo em {ENV_FILE.name}.")
+    return True
+
+
+def salvar_chat_id_no_env(chat_id):
+    return salvar_env("TELEGRAM_CHAT_ID", chat_id)
+
+
+def comando_chat_id(salvar=False):
+    """Descobre o chat_id dos usuários que mandaram mensagem para o bot."""
+    chats = obter_atualizacoes()
+    if not chats:
+        print("[!] Nenhuma conversa encontrada.")
+        print("[*] Abra o seu bot no Telegram, mande /start e rode este comando de novo.")
+        return
+    print("\n[+] Conversas encontradas:")
+    for chat_id, descricao in chats:
+        print(f"    chat_id={chat_id}  ({descricao})")
+    if salvar:
+        if len(chats) == 1:
+            salvar_chat_id_no_env(chats[0][0])
+        else:
+            print("[!] Há mais de uma conversa; rode sem --save e escolha o chat_id certo.")
+    else:
+        print("\n[*] Copie o chat_id para TELEGRAM_CHAT_ID no alerting/.env")
+        print("[*] Ou rode de novo com --chat-id --save para salvar automaticamente.")
 
 
 def enviar_telegram(texto, dry_run=False):
@@ -261,20 +342,86 @@ def stream_docker(container, alerts_path, filtro, dry_run=False):
         time.sleep(5)
 
 
+def comando_setup():
+    """Wizard: pede o token, salva, descobre chat_id e manda um teste."""
+    print("=== Configuração do Telegram — Projeto 1 ===\n")
+    print("1) No Telegram, fale com @BotFather -> /newbot (se ainda não fez).")
+    print("2) Copie o token que ele devolveu.")
+    print("3) Abra o seu bot e mande /start.\n")
+
+    token_atual = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    dica = " (Enter para manter o atual)" if token_atual else ""
+    try:
+        token = getpass.getpass(f"Cole o token do BotFather{dica}: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        print("\n[!] Cancelado.")
+        return
+    except Exception:
+        token = input(f"Cole o token do BotFather{dica}: ").strip()
+
+    if not token and token_atual:
+        token = token_atual
+    if not token:
+        print("[!] Token vazio. Rode de novo e cole o token.")
+        return
+    if ":" not in token or len(token) < 30:
+        print("[!] Isso não parece um token do Telegram (formato 123456:ABC...).")
+        print("[*] Copie de novo a mensagem do BotFather, sem espaços.")
+        return
+
+    os.environ["TELEGRAM_BOT_TOKEN"] = token
+    salvar_env("TELEGRAM_BOT_TOKEN", token)
+
+    print("\n[*] Consultando o Telegram para descobrir seu chat_id...")
+    chats = obter_atualizacoes()
+    if not chats:
+        print("[!] O bot ainda não recebeu mensagem sua.")
+        print("[*] Abra o bot no Telegram, mande /start e rode: --setup de novo")
+        return
+    if len(chats) > 1:
+        print("[!] Mais de uma conversa encontrada. Escolha uma e preencha o chat_id no .env:")
+        for chat_id, descricao in chats:
+            print(f"    chat_id={chat_id}  ({descricao})")
+        return
+
+    chat_id, descricao = chats[0]
+    print(f"[+] Conversa encontrada: {chat_id} ({descricao})")
+    salvar_env("TELEGRAM_CHAT_ID", chat_id)
+    os.environ["TELEGRAM_CHAT_ID"] = str(chat_id)
+
+    print("\n[*] Enviando mensagem de teste...")
+    if enviar_telegram(montar_mensagem(alerta_fake())):
+        print("[+] Pronto! Confira o Telegram no celular.")
+        print("[*] Para alertas em tempo real: python alerting/webhook_dispatcher.py --follow")
+    else:
+        print("[!] O Telegram recusou. Confira o token e o chat_id no .env.")
+
+
 def main():
     configurar_console_utf8()
     carregar_env()
 
     parser = argparse.ArgumentParser(description="Wazuh -> Telegram (Projeto 1)")
     modo = parser.add_mutually_exclusive_group(required=True)
+    modo.add_argument("--setup", action="store_true", help="Wizard: salva token, descobre chat_id e testa")
     modo.add_argument("--test", action="store_true", help="Envia um alerta fake para testar o Telegram")
     modo.add_argument("--follow", action="store_true", help="Fica ouvindo os alertas do Wazuh")
+    modo.add_argument("--chat-id", action="store_true", help="Descobre o chat_id de quem falou com o bot")
+    parser.add_argument("--save", action="store_true", help="Com --chat-id, salva o chat_id no .env")
     parser.add_argument("--dry-run", action="store_true", help="Não envia: só mostra a mensagem no terminal")
     parser.add_argument("--file", help="Lê um alerts.json local em vez de usar docker exec")
     parser.add_argument("--from-start", action="store_true", help="Com --file, lê desde o começo (replay)")
     parser.add_argument("--container", default=os.getenv("WAZUH_CONTAINER", DEFAULT_CONTAINER))
     parser.add_argument("--alerts-path", default=os.getenv("ALERTS_PATH", DEFAULT_ALERTS_PATH))
     args = parser.parse_args()
+
+    if args.setup:
+        comando_setup()
+        return
+
+    if args.chat_id:
+        comando_chat_id(salvar=args.save)
+        return
 
     if args.test:
         if not args.dry_run and not telegram_configurado():

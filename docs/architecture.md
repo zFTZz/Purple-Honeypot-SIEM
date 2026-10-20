@@ -46,6 +46,9 @@
 - **Regra custom, não só default**: o ruleset padrão é igual para todo mundo; a regra própria prova que você entendeu o dado e sabe detectar.
 - **Telegram para o alerta**: API simples, testável no celular e sem depender de conta corporativa. O dispatcher roda no host, lê o `alerts.json` via `docker exec` e tem anti-spam.
 - **Só uma regra dispara por evento no Wazuh**: por isso a geo (100103) foi colocada no evento de login bem-sucedido externo, para não "engolir" a 100100 e quebrar o brute-force.
+- **100104 sem `frequency`**: uma segunda regra de frequency apontando para a 100100 consumia os eventos e impedia a 100101 de disparar. Com `if_sid` (evento atual) + `if_matched_sid` (falha anterior), a sequência é detectada no primeiro comando de recon.
+- **6 falhas no teste manual**: o logcollector pode agrupar linhas em lote; a 5ª tentativa às vezes é avaliada antes de entrar na janela. A 6ª garante o disparo e o dispatcher evita spam.
+- **Simulador de ataque**: `honeypot/simulate_attack.py` é um cliente SSH separado, usado só no laboratório para gerar os eventos sem digitar senha manualmente. Ele não faz parte do honeypot e não é necessário em produção.
 
 ## Pastas de evidência (padrão do CJCA)
 
