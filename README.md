@@ -11,7 +11,7 @@ Base de telemetria e detecção para **Purple Teaming**: honeypots em Python ger
 - **Wazuh localfile** — lê `honeypot/logs/*.log` em JSON e aplica as regras
 - **Filebeat** — embutido no container do Wazuh, envia os alertas para o indexer (padrão oficial da stack); não é um container separado
 - **Python** — `alerting/webhook_dispatcher.py` filtra nível >= 10 e envia ao Telegram
-- **Kibana/Wazuh Dashboard** — visualização (dashboard ainda em construção)
+- **Kibana/Wazuh Dashboard** — visualização com 5 painéis (regras, timeline, IPs, comandos e alertas recentes)
 
 ## Arquitetura
 
@@ -26,7 +26,7 @@ Atacante -> Honeypot SSH/HTTP (Python) -> honeypot/logs/*.log (JSON lines)
               +--> Filebeat (dentro do manager) -> Wazuh Indexer -> Dashboard
 ```
 
-Detalhes e decisões em `docs/architecture.md`. Roteiro do vídeo de 2-3 min em `docs/demo_video_link.md`.
+Detalhes e decisões em `docs/architecture.md`. Relatório técnico completo, com bugs e soluções, em `docs/RELATORIO.md`. Roteiro do vídeo de 2-3 min em `docs/demo_video_link.md`.
 
 ## Como rodar
 
@@ -165,7 +165,7 @@ Purple-Honeypot-SIEM/
 ├── siem/create_dashboard.py
 ├── alerting/webhook_dispatcher.py, .env.example, teams_alert.ps1
 ├── deploy/setup.sh
-└── docs/architecture.md, demo_video_link.md
+└── docs/architecture.md, RELATORIO.md, demo_video_link.md
 ```
 
 ## Status do projeto
