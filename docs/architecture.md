@@ -65,4 +65,4 @@ Evidence/
 - O geo não usa GeoIP real; ele compara com faixas internas conhecidas. Em produção: enriquecer com MaxMind/ipinfo.
 - O honeypot é de laboratório: aceita qualquer senha e guarda a senha no JSON. Em produção, isso seria redigido.
 - O dispatcher lê o `alerts.json` via Docker; em produção, o ideal é uma integração nativa do Wazuh ou um SOAR (Shuffle/DFIR-IRIS).
-- O dashboard ainda não está finalizado.
+- O dashboard e os usuários `admin/admin` são de laboratório; em produção, TLS com certificados válidos, senhas fortes e RBAC do Wazuh.

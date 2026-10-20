@@ -11,7 +11,6 @@ services:
       - "discovery.type=single-node"
       - "cluster.name=wazuh-cluster"
       - "node.name=wazuh-indexer"
-      - "plugins.security.disabled=true"
     ulimits:
       memlock:
         soft: -1
@@ -24,7 +23,10 @@ services:
     ports:
       - "9200:9200"
     networks:
-      - wazuh
+      wazuh:
+        aliases:
+          # O dashboard oficial procura "wazuh.indexer" (com ponto).
+          - wazuh.indexer
 
   wazuh-manager:
     image: wazuh/wazuh-manager:4.7.2
@@ -59,8 +61,9 @@ services:
       - "INDEXER_USERNAME=admin"
       - "INDEXER_PASSWORD=admin"
       - "WAZUH_API_URL=https://wazuh-manager"
+      # Usuarios padrao do manager neste volume (nao sao os do compose oficial).
       - "API_USERNAME=wazuh-wui"
-      - "API_PASSWORD=MyS3cr37P450r.*-"
+      - "API_PASSWORD=wazuh-wui"
     ports:
       - "5601:5601"  # 443 e 8443 ocupadas neste host; dashboard em https://localhost:5601
     depends_on:

@@ -136,12 +136,33 @@ Decisões que valem entrevista:
 - No teste manual, use **6 falhas**: o logcollector pode agrupar eventos em lote e a 5ª às vezes é avaliada antes de entrar na janela da 100101. A 6ª garante o disparo.
 - O dispatcher filtra por nível e tem cooldown para não mandar 20 mensagens do mesmo ataque.
 
+## Dashboard
+
+- URL: **https://localhost:5601**
+- Login do laboratório: **admin / admin**
+- Dashboard pronto: **Purple Honeypot SIEM** (menu Dashboards)
+- O script `siem/create_dashboard.py` recria/atualiza o index pattern e os 4 painéis:
+  alertas por regra, alertas no tempo, top IPs e alertas recentes.
+
+```powershell
+python siem/create_dashboard.py
+```
+
+O dashboard lê o índice `wazuh-alerts-*`, alimentado pelo Filebeat que já vem
+dentro do container do manager. Se o dashboard abrir com **503** ou
+"Security not initialized", rode uma vez:
+
+```powershell
+docker exec -e OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk wazuh-indexer bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh -cd /usr/share/wazuh-indexer/opensearch-security -icl -nhnv -cacert /usr/share/wazuh-indexer/certs/root-ca.pem -cert /usr/share/wazuh-indexer/certs/admin.pem -key /usr/share/wazuh-indexer/certs/admin-key.pem
+```
+
 ## Estrutura
 
 ```
 Purple-Honeypot-SIEM/
 ├── honeypot/ssh_honeypot.py, http_honeypot.py, simulate_attack.py, logs/
 ├── siem/docker-compose.yml, filebeat.yml (referência), custom_rules/bruteforce_custom.xml
+├── siem/create_dashboard.py
 ├── alerting/webhook_dispatcher.py, .env.example, teams_alert.ps1
 ├── deploy/setup.sh
 └── docs/architecture.md, demo_video_link.md
@@ -149,9 +170,9 @@ Purple-Honeypot-SIEM/
 
 ## Status do projeto
 
-Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, e dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104).
+Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 4 painéis.
 
-Pendente: dashboard no Kibana, `setup.sh` de instalação, honeypot FTP (opcional), vídeo de 2-3 min com o simulador e simulação de entrevista.
+Pendente: honeypot FTP (opcional), vídeo de 2-3 min com o simulador e simulação de entrevista.
 
 ## O que NÃO fazer
 
