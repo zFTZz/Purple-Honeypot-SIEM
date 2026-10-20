@@ -141,8 +141,8 @@ Decisões que valem entrevista:
 - URL: **https://localhost:5601**
 - Login do laboratório: **admin / admin**
 - Dashboard pronto: **Purple Honeypot SIEM** (menu Dashboards)
-- O script `siem/create_dashboard.py` recria/atualiza o index pattern e os 4 painéis:
-  alertas por regra, alertas no tempo, top IPs e alertas recentes.
+- O script `siem/create_dashboard.py` recria/atualiza o index pattern e os 5 painéis:
+  alertas por regra, alertas no tempo, top IPs, comandos executados e alertas recentes.
 
 ```powershell
 python siem/create_dashboard.py
@@ -170,7 +170,7 @@ Purple-Honeypot-SIEM/
 
 ## Status do projeto
 
-Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 4 painéis.
+Concluído e testado na mão: honeypot SSH/HTTP, simulador de ataque SSH, ingestão no Wazuh, 5 regras custom, brute-force/sequência/geo disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 5 painéis.
 
 Pendente: honeypot FTP (opcional), vídeo de 2-3 min com o simulador e simulação de entrevista.
 

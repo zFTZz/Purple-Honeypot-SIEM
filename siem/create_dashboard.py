@@ -23,6 +23,7 @@ INDEX_REF = "kibanaSavedObjectMeta.searchSourceJSON.index"
 PIE_TITLE = "Honeypot - alertas por regra"
 LINE_TITLE = "Honeypot - alertas ao longo do tempo"
 TABLE_TITLE = "Honeypot - top IPs"
+COMMAND_TITLE = "Honeypot - comandos executados"
 SEARCH_TITLE = "Honeypot - alertas recentes"
 DASH_TITLE = "Purple Honeypot SIEM"
 
@@ -287,6 +288,56 @@ def table_vis():
     }
 
 
+def command_vis():
+    vis = {
+        "title": COMMAND_TITLE,
+        "type": "tagcloud",
+        "params": {
+            "scale": "linear",
+            "orientation": "single",
+            "minFontSize": 18,
+            "maxFontSize": 72,
+            "showLabel": True,
+            "metric": {"type": "count", "id": "1"},
+            "bucket": {
+                "type": "terms",
+                "id": "2",
+                "field": "data.command",
+                "size": 20,
+                "order": "desc",
+                "orderBy": "1",
+            },
+        },
+        "aggs": [
+            {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}},
+            {
+                "id": "2",
+                "enabled": True,
+                "type": "terms",
+                "schema": "segment",
+                "params": {
+                    "field": "data.command",
+                    "orderBy": "1",
+                    "order": "desc",
+                    "size": 20,
+                    "otherBucket": False,
+                    "otherBucketLabel": "Outros",
+                    "missingBucket": False,
+                    "missingBucketLabel": "Sem valor",
+                },
+            },
+        ],
+    }
+    return {
+        "title": COMMAND_TITLE,
+        "visState": json.dumps(vis, ensure_ascii=False),
+        "uiStateJSON": "{}",
+        "description": "Comandos de reconhecimento mais executados no honeypot.",
+        "version": 1,
+        "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()},
+    }
+
+
 def recent_search():
     return {
         "title": SEARCH_TITLE,
@@ -306,6 +357,7 @@ def dashboard_obj(panel_ids):
         (24, 0, 24, 15, "line"),
         (0, 15, 24, 15, "table"),
         (24, 15, 24, 15, "search"),
+        (0, 30, 48, 15, "command"),
     ]
     for i, (x, y, w, h, kind) in enumerate(layout):
         panel_index = str(i + 1)
@@ -319,10 +371,11 @@ def dashboard_obj(panel_ids):
                 "panelRefName": ref_name,
             }
         )
-        refs.append({"name": ref_name, "type": kind, "id": panel_ids[kind]})
-    return {
+        panel_type = "search" if kind == "search" else "visualization"
+        refs.append({"name": ref_name, "type": panel_type, "id": panel_ids[kind]})
+    attributes = {
         "title": DASH_TITLE,
-        "description": "Visao do honeypot SSH/HTTP: regras, volume, IPs e alertas recentes.",
+        "description": "Visao do honeypot SSH/HTTP: regras, volume, IPs, comandos e alertas recentes.",
         "panelsJSON": json.dumps(panels, ensure_ascii=False),
         "optionsJSON": json.dumps({"useMargins": True, "syncColors": False, "hidePanelTitles": False}),
         "version": 1,
@@ -333,6 +386,7 @@ def dashboard_obj(panel_ids):
             "searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}, "filter": []})
         },
     }
+    return attributes, refs
 
 
 def main():
@@ -365,20 +419,12 @@ def main():
     pie_id = upsert(opener, base, "visualization", PIE_TITLE, pie_vis(), refs)
     line_id = upsert(opener, base, "visualization", LINE_TITLE, line_vis(), refs)
     table_id = upsert(opener, base, "visualization", TABLE_TITLE, table_vis(), refs)
+    command_id = upsert(opener, base, "visualization", COMMAND_TITLE, command_vis(), refs)
     search_id = upsert(opener, base, "search", SEARCH_TITLE, recent_search(), refs)
-    dash_id = upsert(
-        opener,
-        base,
-        "dashboard",
-        DASH_TITLE,
-        dashboard_obj({"pie": pie_id, "line": line_id, "table": table_id, "search": search_id}),
-        [
-            {"name": "panel_0", "type": "visualization", "id": pie_id},
-            {"name": "panel_1", "type": "visualization", "id": line_id},
-            {"name": "panel_2", "type": "visualization", "id": table_id},
-            {"name": "panel_3", "type": "search", "id": search_id},
-        ],
+    dash_attrs, dash_refs = dashboard_obj(
+        {"pie": pie_id, "line": line_id, "table": table_id, "command": command_id, "search": search_id}
     )
+    dash_id = upsert(opener, base, "dashboard", DASH_TITLE, dash_attrs, dash_refs)
     print(f"[+] Dashboard pronto: {base}/app/dashboards#/view/{dash_id}?_g=(time:(from:now-24h,to:now))")
     return 0
 
