@@ -36,14 +36,14 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 1. Um atacante — ou o simulador `honeypot/simulate_attack.py` — conecta no honeypot SSH (`localhost:2222`) ou no honeypot HTTP (`localhost:8080`).
 2. O honeypot grava um evento JSON por linha em `honeypot/logs/ssh.log` ou `http.log`, com IP, usuário, senha/comando e timestamp UTC.
 3. O Wazuh Manager lê esses arquivos via `localfile` com `log_format=json`.
-4. Cinco regras customizadas detectam falha isolada, brute-force, reconhecimento, login externo e sequência falha → reconhecimento.
+4. Onze regras customizadas detectam falha isolada, brute-force, reconhecimento, login externo, sequência falha → reconhecimento, scanner HTTP, caminho sensível, POST, scan sequencial e brute-force FTP.
 5. O alerta é gravado em `/var/ossec/logs/alerts/alerts.json`.
 6. O dispatcher lê esse arquivo via `docker exec`, filtra nível ≥ 10, aplica cooldown e envia uma mensagem HTML para o Telegram.
 7. O Filebeat **embutido no container do manager** envia os alertas ao Wazuh Indexer; o Wazuh Dashboard mostra cinco painéis: alertas por regra, timeline, top IPs, comandos executados e alertas recentes.
 
 **Evidência mais importante:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`.
 
-**Em uma frase para entrevista:** “Eu construí um honeypot SSH/HTTP que gera telemetria JSON, correlaciono os eventos no Wazuh com cinco regras custom e levo o alerta ao Telegram, com um dashboard para triagem.”
+**Em uma frase para entrevista:** “Eu construí um honeypot SSH/HTTP/FTP que gera telemetria JSON, correlaciono os eventos no Wazuh com onze regras custom e levo o alerta ao Telegram, com um dashboard para triagem.”
 
 ---
 
@@ -67,12 +67,12 @@ Provar, ponta a ponta, a capacidade de:
 |---|---|---|
 | Honeypot SSH | `ssh_honeypot.py`, SSH real com Paramiko na porta 2222 | ✅ |
 | Honeypot HTTP | `http_honeypot.py`, iscas e captura de User-Agent na porta 8080 | ✅ |
-| Honeypot FTP | Não implementado | ⏳ opcional |
-| Honeypots multi-protocolo | SSH + HTTP (dois protocolos) | ✅ |
-| Captura de IP, usuário, credenciais, comandos e User-Agent | SSH captura IP/usuário/senha/comando; HTTP captura IP/método/path/User-Agent/body | ✅ |
+| Honeypot FTP | `ftp_honeypot.py`, login simulado com iscas LIST/RETR na porta 2121 | ✅ (opcional, implementado) |
+| Honeypots multi-protocolo | SSH + HTTP + FTP (três protocolos) | ✅ |
+| Captura de IP, usuário, credenciais, comandos e User-Agent | SSH: IP/usuário/senha/comando; HTTP: IP/método/path/User-Agent/body; FTP: IP/usuário/senha/comando | ✅ |
 | Logs em JSON | Um JSON por linha, timestamp UTC | ✅ |
 | Filebeat → Wazuh | Filebeat já vem dentro do manager e envia `alerts.json` ao indexer; os logs do honeypot entram por `localfile` | ✅ com ressalva de arquitetura |
-| Mínimo de 3 regras custom | 5 regras (`100100`–`100104`) | ✅ |
+| Mínimo de 3 regras custom | 11 regras (`100100`–`100110`, SSH/HTTP/FTP) | ✅ |
 | Brute-force com threshold próprio | `100101`: 5 falhas do mesmo IP em 120 s | ✅ |
 | Sequência falha → reconhecimento | `100104`: falha + comando de recon do mesmo IP | ✅ |
 | Geolocalização anômala | `100103`: login bem-sucedido de IP fora das faixas internas (heurística CIDR, **não** GeoIP real) | ✅ parcial |
@@ -87,7 +87,7 @@ Provar, ponta a ponta, a capacidade de:
 - Não é um honeypot de alta interação: o shell é simulado.
 - Não é um SIEM de produção: é um nó Wazuh de laboratório.
 - Não faz GeoIP real; a regra de “geolocalização” é uma **anomalia de origem** baseada em faixas privadas.
-- Não possui regras HTTP específicas ainda: os logs HTTP são coletados, mas as cinco regras atuais são de SSH.
+- Não possui resposta ativa (não bloqueia IP nem isola conexão).
 - Não possui HA, retenção de longo prazo, TLS com certificado público nem RBAC endurecido.
 
 ---
@@ -102,9 +102,11 @@ Atacante / scanner / simulador
         +---- SSH :2222 ----------------------+
         |                                     |
         +---- HTTP :8080 ---------------------+
+        |                                     |
+        +---- FTP :2121 ----------------------+
                                               |
                                               v
-                         honeypot/logs/ssh.log e http.log
+                         honeypot/logs/ssh.log, http.log e ftp.log
                          (JSON lines, timestamp UTC)
                                               |
                                               v
@@ -113,11 +115,11 @@ Atacante / scanner / simulador
                                               |
                                               v
                          analysisd + regras custom
-                         100100 base
-                         100101 brute-force
-                         100102 recon
-                         100103 login externo
-                         100104 sequência
+                         100100 base          100105 scan HTTP (UA)
+                         100101 brute SSH     100106 isca/traversal
+                         100102 recon         100107 POST
+                         100103 login externo 100108 scan sequencial
+                         100104 sequência     100109/100110 FTP
                                               |
                     +-------------------------+-------------------------+
                     |                                                   |
@@ -180,7 +182,16 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 - O `POST` é sempre marcado como suspeito.
 - Ainda não há regra custom específica para HTTP; os eventos são coletados e ficam disponíveis no índice.
 
-### 4.3 Simulador — `honeypot/simulate_attack.py`
+### 4.3 Honeypot FTP — `honeypot/ftp_honeypot.py`
+
+- Socket server multithreaded em Python puro (`socketserver`), porta 2121 (21 exigiria admin/root no Windows).
+- Protocolo FTP por texto: banner `220 PurpleFTP (vsftpd 3.0.5)`, comandos `USER`, `PASS`, `PWD`, `SYST`, `PASV`, `LIST`, `RETR`, `QUIT`.
+- Mesma lógica do SSH honeypot: a **primeira senha de cada conexão falha de propósito**; da segunda em diante, qualquer senha é aceita. Isso alimenta a regra de brute-force FTP (`100110`).
+- Registra `ftp.login_failed`, `ftp.login` e `ftp.command` (inclui comandos desconhecidos, que revelam a ferramenta usada).
+- Iscas: `LIST` devolve listing falso; `RETR backup.tar.gz` finge transferir um arquivo tentador (conteúdo fictício).
+- Testado contra o pipeline real: 6 falhas do mesmo IP geraram `100109` (5 alertas) e `100110` (nível 10).
+
+### 4.4 Simulador — `honeypot/simulate_attack.py`
 
 - Não é o honeypot; é um **cliente SSH de laboratório** que ataca o honeypot.
 - Abre seis conexões e erra a senha em cada uma para gerar seis `ssh.login_failed`.
@@ -189,7 +200,7 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 - É útil para o vídeo e para testes reproduzíveis, sem digitar senha seis vezes na mão.
 - Aceita `--host`, `--port`, `--user`, `--attempts`, `--command` e `--delay`.
 
-### 4.4 Wazuh — `siem/docker-compose.yml`
+### 4.5 Wazuh — `siem/docker-compose.yml`
 
 - Wazuh Manager 4.7.2, Wazuh Indexer 4.7.2 e Wazuh Dashboard 4.7.2.
 - Manager expõe 1514/1515 e 55000; indexer 9200; dashboard 5601.
@@ -199,11 +210,11 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 - O volume `siem_wazuh-manager-etc` guarda o `ossec.conf` e sobrevive a reinícios.
 - O `ossec.conf` recebe os blocos de `localfile` para os logs do honeypot.
 
-### 4.5 Regras — `siem/custom_rules/bruteforce_custom.xml`
+### 4.6 Regras — `siem/custom_rules/bruteforce_custom.xml`
 
-Cinco regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detalhes na seção 5.
+Onze regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detalhes na seção 5.
 
-### 4.6 Dispatcher — `alerting/webhook_dispatcher.py`
+### 4.7 Dispatcher — `alerting/webhook_dispatcher.py`
 
 - Lê o `alerts.json` via `docker exec ... tail -F` ou de um arquivo local.
 - Filtra `rule.level >= 10` (configurável em `MIN_LEVEL`).
@@ -220,7 +231,7 @@ Cinco regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detal
   - `--chat-id` e `--save`: descoberta e gravação do chat ID.
 - O token fica em `alerting/.env`, que é ignorado pelo Git.
 
-### 4.7 Dashboard — `siem/create_dashboard.py`
+### 4.8 Dashboard — `siem/create_dashboard.py`
 
 - Script idempotente que usa a API do Wazuh Dashboard/OpenSearch Dashboards.
 - Cria o index pattern `wazuh-alerts-*` com campo de tempo `@timestamp`.
@@ -233,7 +244,7 @@ Cinco regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detal
 - Usa referências corretas entre dashboard, visualizações e index pattern.
 - É idempotente: procura pelo título e atualiza em vez de duplicar.
 
-### 4.8 Setup — `deploy/setup.sh`
+### 4.9 Setup — `deploy/setup.sh`
 
 - Verifica Docker, Docker Compose e `curl`.
 - Cria `honeypot/logs/ssh.log` e `http.log`.
@@ -246,7 +257,7 @@ Cinco regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detal
 - Espera o dashboard e executa `siem/create_dashboard.py`.
 - É idempotente: rodar duas vezes não duplica configuração.
 
-### 4.9 Fallback Teams — `alerting/teams_alert.ps1`
+### 4.10 Fallback Teams — `alerting/teams_alert.ps1`
 
 Script PowerShell opcional para enviar alerta a um webhook do Teams. O Telegram foi escolhido para o MVP por ser mais simples de testar no celular; o Teams fica como alternativa corporativa.
 
@@ -263,6 +274,12 @@ Arquivo: `siem/custom_rules/bruteforce_custom.xml`.
 | `100102` | 8 | `type=ssh.command` e comando de recon | Reconhecimento pós-acesso | `id`, `whoami`, `uname`, `cat /etc/passwd` etc. |
 | `100103` | 12 | `type=ssh.login` e IP externo | Anomalia de origem | Não é GeoIP real; usa faixas privadas; `ignore=300` |
 | `100104` | 12 | `100102` + falha `100100` do mesmo IP em 300 s | Sequência falha → recon | Sem `frequency`; dispara no primeiro comando após a falha |
+| `100105` | 8 | `type=http.request` com User-Agent de ferramenta de scan (sqlmap, nikto, nmap, ffuf...) | Scanner HTTP | Ordenada antes da 100106/100107: só uma regra dispara por evento |
+| `100106` | 8 | `type=http.request` com path sensível (`/.env`, `/admin`, `.git`...) ou traversal | Acesso a isca HTTP | Base da correlação de scan |
+| `100107` | 6 | `type=http.request` com `method=POST` | POST em honeypot | Todo POST em sistema falso é suspeito |
+| `100108` | 10 | 10+ eventos `100106` do mesmo IP em 60 s | Scan/fuzzing sequencial | Mesmo princípio da 100101 |
+| `100109` | 5 | `type` exatamente `ftp.login_failed` | Falha de login FTP | Espelho da 100100, para o honeypot FTP |
+| `100110` | 10 | 5+ eventos `100109` do mesmo IP em 120 s | Brute-force FTP | Espelho da 100101 |
 
 ### 5.1 Regras principais em resumo
 
@@ -471,6 +488,19 @@ Depois disso, o cluster ficou `green` e o login `admin/admin` funcionou.
 | Sequência | falha + `whoami` do mesmo IP | `100104` nível 12 | ✅ |
 | Login externo | `ssh.login` de IP público | `100103` nível 12 | ✅ |
 | Coordenação | falha + comando com `100104` ativa | `100101` continua funcionando | ✅ após remover frequency |
+| Scanner HTTP | GET `/.env` com UA `sqlmap/1.7.2` | `100105` nível 8 | ✅ |
+| Isca HTTP | GET em `/.env`, `/admin`, `/.git/config` | `100106` nível 8 | ✅ (1 alerta: UA de scanner disputa o evento) |
+| Scan HTTP | 3 acessos sensiveis do mesmo IP | `100108` nível 10 | ⏳ por testar com 10+ acessos |
+| Brute-force FTP | 6 falhas do mesmo IP | `100109` x5 + `100110` nível 10 | ✅ |
+
+Teste HTTP/FTP executado escrevendo eventos JSON diretamente nos logs
+(`honeypot/logs/http.log` e `ftp.log`) e conferindo o `alerts.json` do manager:
+5 alertas `100109` + 1 `100110` (IP `3.3.3.3`), 4 `100105` + 1 `100106` (IP `5.5.5.5`),
+1 `100106` (IP `4.4.4.4`, UA legítimo).
+
+O honeypot FTP foi testado de ponta a ponta antes das regras: banner `220`,
+`USER`/`PASS` (1ª falha, 2ª ok), `PWD`, `LIST` e `RETR` geraram
+`ftp.login_failed`, `ftp.login` e `ftp.command` no `ftp.log`.
 
 ### 8.2 Teste real do Telegram
 
@@ -541,8 +571,6 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 | Limitação | Impacto | Próximo passo |
 |---|---|---|
 | Geo é heurística CIDR, não GeoIP | Pode gerar falso positivo/negativo | Integrar MaxMind/ipinfo |
-| HTTP sem regras específicas | Coleta existe, detecção automática não | Regras para `/.env`, `/admin`, POST suspeito |
-| FTP não implementado | Cobertura multi-protocolo parcial | Honeypot FTP + regras |
 | Filebeat embutido no manager | Menos flexibilidade que um Beat separado | Avaliar Filebeat dedicado em produção |
 | Single-node | Sem HA | Cluster Wazuh |
 | Dispatcher depende de Docker/tail | Pode perder eventos se o container reiniciar | Integração nativa/SOAR |
@@ -556,7 +584,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 1. Isolar o honeypot em VLAN dedicada, com egress bloqueado.
 2. Não registrar senhas em texto claro; aplicar hash/redação.
 3. Usar GeoIP real e threat intelligence.
-4. Criar regras específicas para HTTP e FTP.
+4. Criar GeoIP real, regras de resposta ativa e testes automatizados.
 5. Trocar credenciais padrão, usar TLS válido e RBAC.
 6. Rodar o dispatcher como serviço/sidecar, com retry e dead-letter queue.
 7. Adicionar testes automatizados de regras e um pipeline CI.
@@ -570,7 +598,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 ### 10.1 “Explica o fluxo em 30 segundos”
 
-“O atacante conecta no honeypot SSH na 2222. O honeypot usa Paramiko para fazer um SSH real, registra falhas, login e comandos em JSON com timestamp UTC. O Wazuh lê esses arquivos via localfile, aplica cinco regras custom e grava os alertas no alerts.json. Um dispatcher lê esse arquivo, filtra nível 10 ou mais, aplica cooldown e manda para o Telegram. O Filebeat que já vem no manager envia os alertas para o indexer, e o dashboard mostra as regras, a timeline, os IPs e os comandos.”
+“O atacante conecta no honeypot SSH na 2222, no HTTP na 8080 ou no FTP na 2121. Os honeypots usam protocolos reais, registram falhas, logins e comandos em JSON com timestamp UTC. O Wazuh lê esses arquivos via localfile, aplica onze regras custom e grava os alertas no alerts.json. Um dispatcher lê esse arquivo, filtra nível 10 ou mais, aplica cooldown e manda para o Telegram. O Filebeat que já vem no manager envia os alertas para o indexer, e o dashboard mostra as regras, a timeline, os IPs e os comandos.”
 
 ### 10.2 “Por que a 100104 não usa frequency?”
 
@@ -616,26 +644,28 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 - [x] Honeypot SSH real com comandos e credenciais.
 - [x] Honeypot HTTP com iscas e User-Agent.
+- [x] Honeypot FTP opcional implementado e testado (porta 2121).
 - [x] Simulador de ataque SSH.
-- [x] Ingestão no Wazuh via `localfile` JSON.
-- [x] Cinco regras custom testadas.
+- [x] Ingestão no Wazuh via `localfile` JSON (SSH, HTTP e FTP).
+- [x] Onze regras custom testadas (SSH 100100–100104, HTTP 100105–100108, FTP 100109–100110).
 - [x] Brute-force, sequência e login externo disparando.
 - [x] Dispatcher Wazuh → Telegram com token seguro.
 - [x] Mensagens reais no celular.
 - [x] Dashboard com cinco painéis.
 - [x] `setup.sh` idempotente.
 - [x] Documentação de arquitetura, regras e demo.
+- [x] Regras específicas para HTTP (100105–100108).
+- [x] Honeypot FTP (opcional) implementado e com regras (100109–100110).
+- [x] Push dos commits no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
 
 ### Pendente
 
 - [ ] Gravar o vídeo de 2–3 min usando `simulate_attack.py`.
 - [ ] Fazer a entrevista simulada de SOC.
-- [ ] Adicionar regras específicas para HTTP.
-- [ ] Avaliar honeypot FTP (opcional).
+- [ ] Testar a 100108 ao vivo com 10+ acessos sensiveis (só foi provada via pipeline com eventos escritos).
 - [ ] Integrar GeoIP real.
 - [ ] Endurecer credenciais/TLS/RBAC.
 - [ ] Criar testes automatizados de regressão das regras.
-- [ ] Fazer push dos commits locais quando o usuário autorizar.
 - [ ] Retomar o portfólio HTML/CSS somente quando solicitado.
 
 ---
@@ -730,11 +760,13 @@ Purple-Honeypot-SIEM/
 ├── honeypot/
 │   ├── ssh_honeypot.py
 │   ├── http_honeypot.py
+│   ├── ftp_honeypot.py
 │   ├── simulate_attack.py
 │   ├── host.key              # local, não versionado
 │   └── logs/
 │       ├── ssh.log
-│       └── http.log
+│       ├── http.log
+│       └── ftp.log
 ├── siem/
 │   ├── docker-compose.yml
 │   ├── filebeat.yml           # referência documental
@@ -764,8 +796,10 @@ Purple-Honeypot-SIEM/
 | `99a55af` | 100104 sem frequency e sequência testada no Telegram real |
 | `e1e6775` | Dashboard com painéis e `setup.sh` idempotente |
 | `898c9e2` | Painel de comandos executados no dashboard |
+| `7a4d752` | Relatório técnico com decisões, bugs e soluções |
+| `4e33cf9` | Honeypot FTP + regras HTTP/FTP (100105–100110) testadas no pipeline |
 
-Os commits estão **apenas locais**; nenhum push foi feito sem autorização.
+Os commits estão no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
 
 ### 13.3 Glossário rápido
 
