@@ -65,15 +65,14 @@ A imagem oficial do Wazuh Manager 4.7.2 já executa o Filebeat internamente. Ele
 - Python 3.10+ e as dependências de `requirements.txt`.
 - Git Bash (Windows) ou Bash (Linux/macOS).
 
-```bash
-python -m pip install -r requirements.txt
-```
+> Os exemplos usam `python` e PowerShell (Windows). Em Linux/macOS, use `python3` e os comandos equivalentes de shell (`cp` em vez de `Copy-Item`).
 
 ## Início rápido
 
 ```bash
 git clone https://github.com/zFTZz/Purple-Honeypot-SIEM.git
 cd Purple-Honeypot-SIEM
+python -m pip install -r requirements.txt
 bash deploy/setup.sh
 ```
 
@@ -106,13 +105,17 @@ O dispatcher pode ser validado sem token, sem bot e sem enviar mensagem:
 python alerting/webhook_dispatcher.py --test --dry-run
 
 # Alertas reais do Wazuh, apenas impressos no terminal
+# (a stack precisa estar no ar)
 python alerting/webhook_dispatcher.py --follow --dry-run
 
-# Replay de um alerts.json local
-python alerting/webhook_dispatcher.py --file caminho/para/alerts.json --from-start --dry-run
+# Replay de um alerts.json exportado do container
+docker cp wazuh-manager:/var/ossec/logs/alerts/alerts.json ./alerts.json
+python alerting/webhook_dispatcher.py --file ./alerts.json --from-start --exit-on-eof --dry-run
 ```
 
-Para integrar com um endpoint compatível ou um mock local, defina `TELEGRAM_API_BASE` (padrão: `https://api.telegram.org`). Os três comandos acima permitem validar o fluxo sem bot.
+> O `alerts.json` pode conter IPs e dados de ataque. Ele é ignorado pelo Git; não faça commit. Sem `--exit-on-eof`, o `--file` continua observando o arquivo e precisa ser encerrado com `Ctrl+C`.
+
+Para integrar com um endpoint compatível ou um mock local, defina `TELEGRAM_API_BASE` (padrão: `https://api.telegram.org`). Os comandos acima permitem validar o fluxo sem bot.
 
 ### 3. Configurar o Telegram
 
@@ -224,6 +227,8 @@ Purple-Honeypot-SIEM/
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
+├── .gitattributes
+├── .gitignore
 ├── honeypot/
 │   ├── ssh_honeypot.py
 │   ├── http_honeypot.py
@@ -244,8 +249,7 @@ Purple-Honeypot-SIEM/
 │   └── setup.sh
 └── docs/
     ├── architecture.md
-    ├── RELATORIO.md
-    └── img/                   # capturas do dashboard e do Telegram
+    └── RELATORIO.md
 ```
 
 ## Segurança do laboratório
@@ -265,8 +269,7 @@ Purple-Honeypot-SIEM/
 ## Documentação
 
 - [`docs/architecture.md`](docs/architecture.md) — arquitetura, decisões e limitações.
-- [`docs/RELATORIO.md`](docs/RELATORIO.md) — case técnico completo, incluindo o diagnóstico do bug de correlação da `100101`.
-- [`docs/img/`](docs/img/) — capturas do dashboard e do alerta no Telegram.
+- [`docs/RELATORIO.md`](docs/RELATORIO.md) — relatório técnico completo, incluindo o diagnóstico do bug de correlação da `100101`.
 
 ## Licença
 

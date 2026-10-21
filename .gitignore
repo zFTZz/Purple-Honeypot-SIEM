@@ -1,5 +1,6 @@
 honeypot/host.key
 honeypot/logs/
 alerting/.env
+/alerts.json
 __pycache__/
 *.pyc

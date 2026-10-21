@@ -43,7 +43,7 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 
 **Evidência mais importante:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`.
 
-**Resumo do case:** “Honeypot SSH/HTTP/FTP que gera telemetria JSON; o Wazuh correlaciona os eventos com onze regras customizadas e o alerta chega ao Telegram, com um dashboard para triagem.”
+**Resumo do projeto:** “Honeypot SSH/HTTP/FTP que gera telemetria JSON; o Wazuh correlaciona os eventos com onze regras customizadas e o alerta chega ao Telegram, com um dashboard para triagem.”
 
 ---
 
@@ -61,7 +61,7 @@ Provar, ponta a ponta, a capacidade de:
 
 É um MVP de laboratório voltado a operações de SOC/Blue Team, não um produto de produção.
 
-### 2.2 Requisitos da especificação × entrega
+### 2.2 Requisitos do projeto × entrega
 
 | Requisito | O que foi entregue | Status |
 |---|---|---|
@@ -150,7 +150,7 @@ Atacante / scanner / simulador
 
 ### 3.3 Ponto importante: onde está o Filebeat?
 
-A especificação fala “Filebeat → Wazuh”. Neste laboratório, **o Filebeat não é um container separado**: a imagem oficial do Wazuh Manager 4.7.2 já executa o Filebeat 7.10.2 internamente e envia os alertas do manager para o indexer. Os logs do honeypot entram no manager por `localfile`, não pelo Filebeat.
+A arquitetura de referência fala “Filebeat → Wazuh”. Neste laboratório, **o Filebeat não é um container separado**: a imagem oficial do Wazuh Manager 4.7.2 já executa o Filebeat 7.10.2 internamente e envia os alertas do manager para o indexer. Os logs do honeypot entram no manager por `localfile`, não pelo Filebeat.
 
 O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Filebeat interno faz. Essa decisão reduz containers e pontos de falha, mas cria um acoplamento maior com a imagem do manager. Em uma arquitetura clássica de ELK, o Filebeat seria um agente separado lendo os logs e enviando ao Elasticsearch/OpenSearch.
 
@@ -226,6 +226,7 @@ Onze regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detalh
   - `--follow`: fica ouvindo o Wazuh em tempo real.
   - `--file`: lê um arquivo local.
   - `--from-start`: com `--file`, lê desde o começo.
+  - `--exit-on-eof`: com `--file`, encerra ao chegar ao fim do arquivo.
   - `--dry-run`: não envia, só mostra no terminal.
   - `--chat-id` e `--save`: descoberta e gravação do chat ID.
 - O token fica em `alerting/.env`, que é ignorado pelo Git.
@@ -633,7 +634,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 ### 10.9 “Qual a diferença entre Kibana e Wazuh Dashboard?”
 
-“O Wazuh Dashboard é baseado no OpenSearch Dashboards, que é um fork do Kibana. A especificação fala Kibana genericamente; na prática, a stack Wazuh usa OpenSearch Dashboards com o plugin Wazuh. O conceito de index pattern, visualizações e dashboard é o mesmo.”
+“O Wazuh Dashboard é baseado no OpenSearch Dashboards, que é um fork do Kibana. A arquitetura de referência fala Kibana genericamente; na prática, a stack Wazuh usa OpenSearch Dashboards com o plugin Wazuh. O conceito de index pattern, visualizações e dashboard é o mesmo.”
 
 ### 10.10 “Quais são os riscos de rodar um honeypot?”
 
@@ -664,7 +665,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 - [ ] Gravar o vídeo de 2–3 min usando `simulate_attack.py`.
 - [ ] Testar a `100108` ao vivo com 10+ acessos reais (foi validada via eventos injetados no pipeline).
-- [ ] Adicionar as capturas do dashboard e do Telegram em `docs/img/`.
+- [ ] Adicionar as capturas do dashboard e do Telegram ao README.
 - [ ] Integrar GeoIP real.
 - [ ] Endurecer credenciais/TLS/RBAC.
 - [ ] Criar testes automatizados de regressão das regras.
@@ -703,6 +704,13 @@ Teste manual:
 ```powershell
 python alerting/webhook_dispatcher.py --test
 python alerting/webhook_dispatcher.py --test --dry-run
+```
+
+Replay local, sem Telegram e sem manter o processo aberto:
+
+```powershell
+docker cp wazuh-manager:/var/ossec/logs/alerts/alerts.json ./alerts.json
+python alerting/webhook_dispatcher.py --file ./alerts.json --from-start --exit-on-eof --dry-run
 ```
 
 ### 12.3 Rodar o honeypot e o dispatcher
@@ -788,9 +796,8 @@ Purple-Honeypot-SIEM/
 │   └── setup.sh
 ├── docs/
 │   ├── architecture.md
-│   ├── RELATORIO.md
-│   └── img/
-│       └── README.md
+│   └── RELATORIO.md
+├── .gitattributes
 └── .gitignore
 ```
 

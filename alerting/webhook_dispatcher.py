@@ -307,7 +307,7 @@ def processar_linha(linha, filtro, dry_run=False):
     enviar_telegram(montar_mensagem(alert), dry_run=dry_run)
 
 
-def stream_arquivo_local(caminho, filtro, dry_run=False, from_start=False):
+def stream_arquivo_local(caminho, filtro, dry_run=False, from_start=False, exit_on_eof=False):
     """Lê um alerts.json local que já está no disco (útil para testar sem Docker)."""
     print(f"[*] Lendo arquivo local: {caminho}")
     with open(caminho, "r", encoding="utf-8", errors="ignore") as f:
@@ -316,6 +316,9 @@ def stream_arquivo_local(caminho, filtro, dry_run=False, from_start=False):
         while True:
             linha = f.readline()
             if not linha:
+                if exit_on_eof:
+                    print("[*] Fim do arquivo.")
+                    return
                 time.sleep(1)
                 continue
             processar_linha(linha, filtro, dry_run)
@@ -417,10 +420,11 @@ def main():
     modo.add_argument("--test", action="store_true", help="Envia um alerta fake para testar o Telegram")
     modo.add_argument("--follow", action="store_true", help="Fica ouvindo os alertas do Wazuh")
     modo.add_argument("--chat-id", action="store_true", help="Descobre o chat_id de quem falou com o bot")
+    modo.add_argument("--file", help="Lê um alerts.json local em vez de usar docker exec")
     parser.add_argument("--save", action="store_true", help="Com --chat-id, salva o chat_id no .env")
     parser.add_argument("--dry-run", action="store_true", help="Não envia: só mostra a mensagem no terminal")
-    parser.add_argument("--file", help="Lê um alerts.json local em vez de usar docker exec")
     parser.add_argument("--from-start", action="store_true", help="Com --file, lê desde o começo (replay)")
+    parser.add_argument("--exit-on-eof", action="store_true", help="Com --file, encerra ao chegar ao fim do arquivo")
     parser.add_argument("--container", default=os.getenv("WAZUH_CONTAINER", DEFAULT_CONTAINER))
     parser.add_argument("--alerts-path", default=os.getenv("ALERTS_PATH", DEFAULT_ALERTS_PATH))
     args = parser.parse_args()
@@ -448,7 +452,7 @@ def main():
 
     if args.file:
         try:
-            stream_arquivo_local(args.file, filtro, args.dry_run, args.from_start)
+            stream_arquivo_local(args.file, filtro, args.dry_run, args.from_start, args.exit_on_eof)
         except FileNotFoundError:
             print(f"[!] Arquivo não encontrado: {args.file}")
             sys.exit(1)
