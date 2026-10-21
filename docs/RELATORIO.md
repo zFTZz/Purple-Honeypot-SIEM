@@ -1,10 +1,10 @@
 # Relatório Técnico — Purple Honeypot SIEM
 
-**Projeto:** Projeto 1 — Honeypot Interativo + SIEM & Dashboards  
-**Autor:** Luiz Felipe — portfólio SOC/Blue Team  
-**Data:** 19/10/2026 (horário local; os logs do laboratório usam UTC)  
-**Status:** MVP funcional de laboratório. Vídeo, entrevista simulada e endurecimento para produção ainda pendentes.  
-**Repositório local:** `C:\GIT-GITHUB\Purple-Honeypot-SIEM`  
+**Projeto:** Purple Honeypot SIEM\
+**Autor:** Luiz Felipe — Segurança da Informação | Blue Team\
+**Data:** 21/10/2026 (horário local; os logs do laboratório usam UTC)\
+**Status:** MVP funcional de laboratório. Demo e endurecimento para produção no roadmap.\
+**Repositório:** https://github.com/zFTZz/Purple-Honeypot-SIEM\
 **Stack principal:** Python, Paramiko, Docker Compose, Wazuh 4.7.2, Wazuh Indexer, Wazuh Dashboard/OpenSearch Dashboards, Filebeat, Telegram Bot API.
 
 > Este é um relatório de laboratório. Tokens, chat IDs e conteúdos de `alerting/.env` não são reproduzidos aqui. As credenciais `admin/admin` e os usuários padrão do Wazuh são intencionais neste ambiente isolado e **não devem ser usados em produção**.
@@ -22,7 +22,7 @@
 7. [Bugs, hipóteses e soluções](#7-bugs-hipóteses-e-soluções)
 8. [Testes e evidências](#8-testes-e-evidências)
 9. [Segurança, riscos e limitações](#9-segurança-riscos-e-limitações)
-10. [Preparação para entrevista](#10-preparação-para-entrevista)
+10. [Perguntas técnicas frequentes](#10-perguntas-técnicas-frequentes)
 11. [Pendências e próximos passos](#11-pendências-e-próximos-passos)
 12. [Como reproduzir](#12-como-reproduzir)
 13. [Apêndices](#13-apêndices)
@@ -33,8 +33,8 @@
 
 O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visualização** para um honeypot de laboratório:
 
-1. Um atacante — ou o simulador `honeypot/simulate_attack.py` — conecta no honeypot SSH (`localhost:2222`) ou no honeypot HTTP (`localhost:8080`).
-2. O honeypot grava um evento JSON por linha em `honeypot/logs/ssh.log` ou `http.log`, com IP, usuário, senha/comando e timestamp UTC.
+1. Um atacante — ou o simulador `honeypot/simulate_attack.py` — conecta no honeypot SSH (`localhost:2222`), HTTP (`localhost:8080`) ou FTP (`localhost:2121`).
+2. O honeypot grava um evento JSON por linha em `honeypot/logs/ssh.log`, `http.log` ou `ftp.log`, com IP, usuário, senha/comando e timestamp UTC.
 3. O Wazuh Manager lê esses arquivos via `localfile` com `log_format=json`.
 4. Onze regras customizadas detectam falha isolada, brute-force, reconhecimento, login externo, sequência falha → reconhecimento, scanner HTTP, caminho sensível, POST, scan sequencial e brute-force FTP.
 5. O alerta é gravado em `/var/ossec/logs/alerts/alerts.json`.
@@ -43,7 +43,7 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 
 **Evidência mais importante:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`.
 
-**Em uma frase para entrevista:** “Eu construí um honeypot SSH/HTTP/FTP que gera telemetria JSON, correlaciono os eventos no Wazuh com onze regras custom e levo o alerta ao Telegram, com um dashboard para triagem.”
+**Resumo do case:** “Honeypot SSH/HTTP/FTP que gera telemetria JSON; o Wazuh correlaciona os eventos com onze regras customizadas e o alerta chega ao Telegram, com um dashboard para triagem.”
 
 ---
 
@@ -59,7 +59,7 @@ Provar, ponta a ponta, a capacidade de:
 - **visualizar** os eventos para triagem;
 - **documentar** decisões e limitações com maturidade de laboratório.
 
-É um MVP para estágio em SOC/Blue Team, não um produto de produção.
+É um MVP de laboratório voltado a operações de SOC/Blue Team, não um produto de produção.
 
 ### 2.2 Requisitos da especificação × entrega
 
@@ -67,7 +67,7 @@ Provar, ponta a ponta, a capacidade de:
 |---|---|---|
 | Honeypot SSH | `ssh_honeypot.py`, SSH real com Paramiko na porta 2222 | ✅ |
 | Honeypot HTTP | `http_honeypot.py`, iscas e captura de User-Agent na porta 8080 | ✅ |
-| Honeypot FTP | `ftp_honeypot.py`, login simulado com iscas LIST/RETR na porta 2121 | ✅ (opcional, implementado) |
+| Honeypot FTP | `ftp_honeypot.py`, login simulado com iscas LIST/RETR na porta 2121 | ✅ |
 | Honeypots multi-protocolo | SSH + HTTP + FTP (três protocolos) | ✅ |
 | Captura de IP, usuário, credenciais, comandos e User-Agent | SSH: IP/usuário/senha/comando; HTTP: IP/método/path/User-Agent/body; FTP: IP/usuário/senha/comando | ✅ |
 | Logs em JSON | Um JSON por linha, timestamp UTC | ✅ |
@@ -79,8 +79,7 @@ Provar, ponta a ponta, a capacidade de:
 | Dashboard com top atacantes, timeline e comandos | 5 painéis no Wazuh Dashboard | ✅ |
 | Alerta Telegram/Teams | Telegram real; `teams_alert.ps1` como fallback | ✅ |
 | `setup.sh` | Script idempotente de subida, segurança, localfile e dashboard | ✅ |
-| Vídeo de 2–3 min | Roteiro pronto em `docs/demo_video_link.md` | ⏳ |
-| Entrevista simulada | Ainda não realizada | ⏳ |
+| Vídeo de 2–3 min | Gravação e publicação pendentes | ⏳ |
 
 ### 2.3 O que este projeto não é
 
@@ -143,8 +142,8 @@ Atacante / scanner / simulador
 | Wazuh Manager API | `https://localhost:55000` |
 | Wazuh Indexer | `https://localhost:9200` |
 | Wazuh Dashboard | `https://localhost:5601` |
-| Logs do honeypot (host) | `honeypot/logs/ssh.log`, `honeypot/logs/http.log` |
-| Logs do honeypot (manager) | `/var/log/honeypot/ssh.log`, `/var/log/honeypot/http.log` |
+| Logs do honeypot (host) | `honeypot/logs/ssh.log`, `honeypot/logs/http.log`, `honeypot/logs/ftp.log` |
+| Logs do honeypot (manager) | `/var/log/honeypot/ssh.log`, `/var/log/honeypot/http.log`, `/var/log/honeypot/ftp.log` |
 | Alertas do Wazuh | `/var/ossec/logs/alerts/alerts.json` |
 | Regras custom | `siem/custom_rules/bruteforce_custom.xml` |
 | Índice do dashboard | `wazuh-alerts-*` |
@@ -179,8 +178,8 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 - Registra `http.request` com IP, método, path, User-Agent, body (limitado a 2000 caracteres) e flag `suspicious`.
 - Iscas: `/.env`, `/robots.txt`, `/admin`, `/login`, `/.git`, `/config.php`, `/backup`.
 - Devolve conteúdo falso tentador, como `DB_PASSWORD` e `AWS_KEY` fictícios.
-- O `POST` é sempre marcado como suspeito.
-- Ainda não há regra custom específica para HTTP; os eventos são coletados e ficam disponíveis no índice.
+- O POST é sempre marcado como suspeito.
+- As regras `100105`–`100108` cobrem User-Agent de scanner, caminho sensível/traversal, POST e scan sequencial. A `100105` é avaliada antes das demais para atribuir o evento à ferramenta de scan quando houver correspondência.
 
 ### 4.3 Honeypot FTP — `honeypot/ftp_honeypot.py`
 
@@ -241,13 +240,14 @@ Onze regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detalh
   3. **Top IPs** — tabela com `data.srcip`.
   4. **Comandos executados** — tag cloud com `data.command`.
   5. **Alertas recentes** — saved search com `@timestamp`, `rule.id`, `rule.level`, `rule.description`, `data.srcip`, `data.user` e `data.command`.
+- A descrição do dashboard cobre os três protocolos (SSH, HTTP e FTP).
 - Usa referências corretas entre dashboard, visualizações e index pattern.
 - É idempotente: procura pelo título e atualiza em vez de duplicar.
 
 ### 4.9 Setup — `deploy/setup.sh`
 
 - Verifica Docker, Docker Compose e `curl`.
-- Cria `honeypot/logs/ssh.log` e `http.log`.
+- Cria `honeypot/logs/ssh.log`, `http.log` e `ftp.log`.
 - Cria `alerting/.env` a partir do exemplo se não existir.
 - Sobe a stack.
 - Espera o indexer responder.
@@ -375,7 +375,6 @@ O `logcollector` pode agrupar linhas em lote. Em alguns testes, a 5ª falha era 
 | 15 | Dashboard como código | Criar tudo na UI | Reprodutível, idempotente, versionável | Script depende da API do Dashboards |
 | 16 | `setup.sh` idempotente | Passos manuais | Reduz erro humano e documenta a instalação | Script precisa lidar com Git Bash/Windows |
 | 17 | Segredos fora do Git | Commitar `.env` | Evita vazamento de token | Exige configuração local em cada máquina |
-| 18 | Clones de referência fora do repositório | Publicar código de terceiros | Portfólio contém apenas trabalho próprio | Estudo local separado em `C:\CLONES-github` |
 
 ---
 
@@ -490,13 +489,17 @@ Depois disso, o cluster ficou `green` e o login `admin/admin` funcionou.
 | Coordenação | falha + comando com `100104` ativa | `100101` continua funcionando | ✅ após remover frequency |
 | Scanner HTTP | GET `/.env` com UA `sqlmap/1.7.2` | `100105` nível 8 | ✅ |
 | Isca HTTP | GET em `/.env`, `/admin`, `/.git/config` | `100106` nível 8 | ✅ (1 alerta: UA de scanner disputa o evento) |
-| Scan HTTP | 3 acessos sensiveis do mesmo IP | `100108` nível 10 | ⏳ por testar com 10+ acessos |
+| Scan HTTP | 10+ acessos a caminhos sensíveis do mesmo IP | `100108` nível 10 | ✅ via eventos injetados; teste ao vivo pendente |
 | Brute-force FTP | 6 falhas do mesmo IP | `100109` x5 + `100110` nível 10 | ✅ |
 
 Teste HTTP/FTP executado escrevendo eventos JSON diretamente nos logs
-(`honeypot/logs/http.log` e `ftp.log`) e conferindo o `alerts.json` do manager:
-5 alertas `100109` + 1 `100110` (IP `3.3.3.3`), 4 `100105` + 1 `100106` (IP `5.5.5.5`),
-1 `100106` (IP `4.4.4.4`, UA legítimo).
+(`honeypot/logs/http.log` e `ftp.log`) e conferindo o `alerts.json` do manager.
+Os IPs abaixo usam faixas reservadas para documentação (RFC 5737) e representam
+as evidências do laboratório:
+
+- `192.0.2.10`: 5 alertas `100109` + 1 `100110`.
+- `198.51.100.20`: 4 alertas `100105` + 1 `100106`.
+- `203.0.113.30`: 1 alerta `100106` com User-Agent legítimo.
 
 O honeypot FTP foi testado de ponta a ponta antes das regras: banner `220`,
 `USER`/`PASS` (1ª falha, 2ª ok), `PWD`, `LIST` e `RETR` geraram
@@ -522,8 +525,8 @@ As mensagens chegaram ao celular com regra, nível, IP, usuário, agente, horár
     tentativa 1/6: falhou
     ...
     tentativa 6/6: falhou
-[*] Login + comando de recon: whoami
-[+] Ataque simulado concluido. Veja os alertas no Wazuh/Telegram.
+[*] Login e comando de reconhecimento: whoami
+[+] Ataque simulado concluído. Veja os alertas no Wazuh/Telegram.
 ```
 
 No Wazuh, isso gerou `100100` (falhas), `100101` (brute-force) e `100104` (sequência). O `100102` pode ser “engolido” pela `100104` quando há falha anterior, porque o Wazuh só alerta uma regra por evento.
@@ -532,7 +535,7 @@ No Wazuh, isso gerou `100100` (falhas), `100101` (brute-force) e `100104` (sequ�
 
 - Indexer: `status: green`, 1 node.
 - Dashboard: `https://localhost:5601/app/login` com HTTP 200.
-- Índice `wazuh-alerts-4.x-2026.10.20` com alertas indexados.
+- Índice `wazuh-alerts-*` com alertas indexados.
 - Index pattern `wazuh-alerts-*` criado.
 - Cinco painéis criados/atualizados via API.
 - O script `create_dashboard.py` é idempotente e pode ser rodado novamente.
@@ -584,7 +587,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 1. Isolar o honeypot em VLAN dedicada, com egress bloqueado.
 2. Não registrar senhas em texto claro; aplicar hash/redação.
 3. Usar GeoIP real e threat intelligence.
-4. Criar GeoIP real, regras de resposta ativa e testes automatizados.
+4. Implementar resposta ativa e playbooks de contenção.
 5. Trocar credenciais padrão, usar TLS válido e RBAC.
 6. Rodar o dispatcher como serviço/sidecar, com retry e dead-letter queue.
 7. Adicionar testes automatizados de regras e um pipeline CI.
@@ -594,7 +597,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 ---
 
-## 10. Preparação para entrevista
+## 10. Perguntas técnicas frequentes
 
 ### 10.1 “Explica o fluxo em 30 segundos”
 
@@ -644,29 +647,27 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 
 - [x] Honeypot SSH real com comandos e credenciais.
 - [x] Honeypot HTTP com iscas e User-Agent.
-- [x] Honeypot FTP opcional implementado e testado (porta 2121).
+- [x] Honeypot FTP implementado e testado (porta 2121).
 - [x] Simulador de ataque SSH.
 - [x] Ingestão no Wazuh via `localfile` JSON (SSH, HTTP e FTP).
-- [x] Onze regras custom testadas (SSH 100100–100104, HTTP 100105–100108, FTP 100109–100110).
-- [x] Brute-force, sequência e login externo disparando.
+- [x] Onze regras custom implementadas (SSH 100100–100104, HTTP 100105–100108, FTP 100109–100110).
+- [x] Brute-force, sequência e login externo validados no pipeline.
+- [x] Regras HTTP e FTP validadas com eventos reais e injetados.
 - [x] Dispatcher Wazuh → Telegram com token seguro.
 - [x] Mensagens reais no celular.
 - [x] Dashboard com cinco painéis.
-- [x] `setup.sh` idempotente.
-- [x] Documentação de arquitetura, regras e demo.
-- [x] Regras específicas para HTTP (100105–100108).
-- [x] Honeypot FTP (opcional) implementado e com regras (100109–100110).
-- [x] Push dos commits no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
+- [x] `setup.sh` idempotente, incluindo os três `localfile`.
+- [x] Documentação de arquitetura e regras.
+- [x] Repositório público no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
 
 ### Pendente
 
 - [ ] Gravar o vídeo de 2–3 min usando `simulate_attack.py`.
-- [ ] Fazer a entrevista simulada de SOC.
-- [ ] Testar a 100108 ao vivo com 10+ acessos sensiveis (só foi provada via pipeline com eventos escritos).
+- [ ] Testar a `100108` ao vivo com 10+ acessos reais (foi validada via eventos injetados no pipeline).
+- [ ] Adicionar as capturas do dashboard e do Telegram em `docs/img/`.
 - [ ] Integrar GeoIP real.
 - [ ] Endurecer credenciais/TLS/RBAC.
 - [ ] Criar testes automatizados de regressão das regras.
-- [ ] Retomar o portfólio HTML/CSS somente quando solicitado.
 
 ---
 
@@ -677,7 +678,9 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 No Git Bash (Windows):
 
 ```bash
-cd /c/GIT-GITHUB/Purple-Honeypot-SIEM
+git clone https://github.com/zFTZz/Purple-Honeypot-SIEM.git
+cd Purple-Honeypot-SIEM
+python -m pip install -r requirements.txt
 bash deploy/setup.sh
 ```
 
@@ -704,19 +707,19 @@ python alerting/webhook_dispatcher.py --test --dry-run
 
 ### 12.3 Rodar o honeypot e o dispatcher
 
-Terminal 1:
+No terminal do honeypot:
 
 ```powershell
 python honeypot/ssh_honeypot.py
 ```
 
-Terminal 2:
+No terminal do dispatcher:
 
 ```powershell
 python alerting/webhook_dispatcher.py --follow
 ```
 
-Terminal 3 (opcional, para gerar o ataque):
+No terminal do simulador (opcional, para gerar o ataque):
 
 ```powershell
 python honeypot/simulate_attack.py
@@ -757,13 +760,15 @@ python siem/create_dashboard.py
 ```text
 Purple-Honeypot-SIEM/
 ├── README.md
+├── LICENSE
+├── requirements.txt
 ├── honeypot/
 │   ├── ssh_honeypot.py
 │   ├── http_honeypot.py
 │   ├── ftp_honeypot.py
 │   ├── simulate_attack.py
 │   ├── host.key              # local, não versionado
-│   └── logs/
+│   └── logs/                 # local, não versionado
 │       ├── ssh.log
 │       ├── http.log
 │       └── ftp.log
@@ -783,8 +788,9 @@ Purple-Honeypot-SIEM/
 │   └── setup.sh
 ├── docs/
 │   ├── architecture.md
-│   ├── demo_video_link.md
-│   └── RELATORIO.md
+│   ├── RELATORIO.md
+│   └── img/
+│       └── README.md
 └── .gitignore
 ```
 
@@ -799,7 +805,7 @@ Purple-Honeypot-SIEM/
 | `7a4d752` | Relatório técnico com decisões, bugs e soluções |
 | `4e33cf9` | Honeypot FTP + regras HTTP/FTP (100105–100110) testadas no pipeline |
 
-Os commits estão no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
+O repositório está publicado em `https://github.com/zFTZz/Purple-Honeypot-SIEM`.
 
 ### 13.3 Glossário rápido
 
@@ -826,4 +832,4 @@ Os commits estão no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
 
 O projeto saiu de “honeypot que grava log” para um **pipeline completo de laboratório**: coleta estruturada, correlação com regras próprias, alerta no celular, dashboard e instalação reproduzível. O maior aprendizado não foi a sintaxe do Wazuh, mas o método de investigação: comparar o teste isolado com o runtime real, isolar variáveis, confirmar a causa e só então documentar a correção.
 
-O que ainda separa este MVP de produção está listado de forma explícita: GeoIP real, regras HTTP/FTP, isolamento de rede, credenciais fortes, testes automatizados e operação com HA. Para a entrevista, a história mais forte é a do bug da `100101`: um problema intermitente que parecia sintaxe, mas era **competição entre regras de correlação** e **agrupamento de eventos em lote**.
+O que ainda separa este MVP de produção está listado de forma explícita: GeoIP real, resposta ativa, isolamento de rede, credenciais fortes, testes automatizados e operação com HA. O ponto mais forte do case é o diagnóstico do bug da `100101`: um problema intermitente que parecia sintaxe, mas era **competição entre regras de correlação** e **agrupamento de eventos em lote**.

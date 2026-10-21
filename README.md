@@ -1,59 +1,165 @@
-# Purple Honeypot & SIEM Integration
+# Purple Honeypot SIEM
 
-Base de telemetria e detecção para **Purple Teaming**: honeypots em Python geram logs JSON, o Wazuh aplica regras custom e o alerta chega no Telegram. É o Projeto 1 do portfólio de Luiz Felipe (foco SOC/Blue Team).
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)
+![Wazuh](https://img.shields.io/badge/Wazuh-4.7.2-3C6EB4)
+![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-> Snapshot de laboratório montado em Out/2026. Tudo descrito aqui foi executado neste repositório. Se o ambiente mudar, o comportamento pode mudar.
+Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três honeypots em Python (SSH, HTTP e FTP) geram eventos JSON, o Wazuh aplica **11 regras de correlação customizadas** e o alerta chega ao Telegram. O Wazuh Dashboard consolida a triagem em cinco painéis.
 
-## Stack
+> **Escopo:** laboratório reproduzível com Docker Compose. Wazuh 4.7.2, testado no Windows com Docker Desktop e Git Bash. Não é uma configuração de produção.
 
-- **Python** — honeypot SSH real (paramiko, porta 2222) + honeypot HTTP (porta 8080) + honeypot FTP (porta 2121)
-- **Docker Compose** — Wazuh 4.7.2 (manager + indexer + dashboard)
-- **Wazuh localfile** — lê `honeypot/logs/*.log` em JSON e aplica as regras
-- **Filebeat** — embutido no container do Wazuh, envia os alertas para o indexer (padrão oficial da stack); não é um container separado
-- **Python** — `alerting/webhook_dispatcher.py` filtra nível >= 10 e envia ao Telegram
-- **Kibana/Wazuh Dashboard** — visualização com 5 painéis (regras, timeline, IPs, comandos e alertas recentes)
+## O que este projeto entrega
+
+- **Honeypot SSH real** com Paramiko: handshake compatível com OpenSSH, autenticação simulada e captura de comandos em um shell falso.
+- **Honeypot HTTP** com iscas (`/.env`, `/admin`, `/.git`, `/backup`) e captura de método, caminho, User-Agent e corpo.
+- **Honeypot FTP** com banner, autenticação simulada, `LIST` e `RETR` de arquivo fictício.
+- **Ingestão estruturada** dos três logs JSON no Wazuh via `localfile`, com timestamp UTC.
+- **Detecção própria**: brute-force SSH/FTP, reconhecimento SSH, sequência falha → reconhecimento, login externo, scanner HTTP, acesso a caminho sensível, POST suspeito e varredura sequencial.
+- **Alertas no Telegram** com filtro de severidade, cooldown e ação sugerida.
+- **Dashboard como código**: index pattern e cinco painéis criados/atualizados por script.
+- **Setup idempotente** para subir a stack, inicializar a segurança do indexer e configurar a ingestão.
 
 ## Arquitetura
 
+```text
+Atacante / scanner / simulador
+        |
+        +---- SSH :2222 ----------------------+
+        |                                     |
+        +---- HTTP :8080 ---------------------+
+        |                                     |
+        +---- FTP :2121 ----------------------+
+                                              |
+                                              v
+                    honeypot/logs/ssh.log, http.log e ftp.log
+                    (JSON lines, timestamp UTC)
+                                              |
+                                              v
+                    Wazuh Manager (container)
+                    localfile + log_format=json
+                                              |
+                                              v
+                    analysisd + regras custom (100100–100110)
+                                              |
+                    +-------------------------+-------------------------+
+                    |                                                   |
+                    v                                                   v
+        /var/ossec/logs/alerts/alerts.json              Filebeat embutido no manager
+                    |                                                   |
+                    v                                                   v
+        webhook_dispatcher.py                              Wazuh Indexer :9200
+        nível >= 10 + cooldown 120 s                                  |
+                    |                                                   v
+                    v                                      Wazuh Dashboard :5601
+              Telegram (celular)                          5 painéis do honeypot
 ```
-Atacante -> Honeypot SSH/HTTP/FTP (Python) -> honeypot/logs/*.log (JSON lines)
-              |
-              v
-     Wazuh manager (localfile JSON) -> regras custom
-              |
-              +--> alerts.json -> webhook_dispatcher.py -> Telegram (celular)
-              |
-              +--> Filebeat (dentro do manager) -> Wazuh Indexer -> Dashboard
+
+### Onde entra o Filebeat
+
+A imagem oficial do Wazuh Manager 4.7.2 já executa o Filebeat internamente. Ele envia os **alertas** do manager (`alerts.json`) para o indexer. Os logs dos honeypots entram no Wazuh por `localfile`, não pelo Filebeat. O arquivo `siem/filebeat.yml` documenta essa configuração para consulta; não é um container separado.
+
+## Requisitos
+
+- Docker Desktop com Docker Compose.
+- Python 3.10+ e as dependências de `requirements.txt`.
+- Git Bash (Windows) ou Bash (Linux/macOS).
+
+```bash
+python -m pip install -r requirements.txt
 ```
 
-Detalhes e decisões em `docs/architecture.md`. Relatório técnico completo, com bugs e soluções, em `docs/RELATORIO.md`. Roteiro do vídeo de 2-3 min em `docs/demo_video_link.md`.
+## Início rápido
 
-## Como rodar
-
-### 1. Subir o Wazuh
-
-```powershell
-cd C:\GIT-GITHUB\Purple-Honeypot-SIEM
-docker compose -f siem/docker-compose.yml up -d
-docker ps --filter name=wazuh
+```bash
+git clone https://github.com/zFTZz/Purple-Honeypot-SIEM.git
+cd Purple-Honeypot-SIEM
+bash deploy/setup.sh
 ```
 
-Dashboard: `https://localhost:5601` (admin/admin). Manager: `localhost:55000`.
+O `setup.sh` sobe indexer, manager e dashboard, inicializa a segurança do indexer quando necessário, cria os arquivos de log, configura os três `localfile` e executa a criação do dashboard.
 
-### 2. Subir o honeypot SSH
+- Dashboard: `https://localhost:5601`
+- Login do laboratório: `admin` / `admin`
+- Wazuh Manager API: `https://localhost:55000`
+
+> As credenciais `admin/admin` e os usuários padrão do Wazuh são intencionais neste laboratório isolado. Troque-as em qualquer ambiente compartilhado.
+
+## Execução manual
+
+### 1. Subir os honeypots
 
 ```powershell
 python honeypot/ssh_honeypot.py
+python honeypot/http_honeypot.py
+python honeypot/ftp_honeypot.py
 ```
 
-Deixe esse terminal aberto (PS1). Não digite nele; `Ctrl+C` para parar.
+Use um terminal para cada serviço ou inicie apenas o protocolo que deseja demonstrar.
 
-### 3. Testar o honeypot (outro terminal)
+### 2. Testando sem Telegram
+
+O dispatcher pode ser validado sem token, sem bot e sem enviar mensagem:
+
+```powershell
+# Formatação do alerta no terminal
+python alerting/webhook_dispatcher.py --test --dry-run
+
+# Alertas reais do Wazuh, apenas impressos no terminal
+python alerting/webhook_dispatcher.py --follow --dry-run
+
+# Replay de um alerts.json local
+python alerting/webhook_dispatcher.py --file caminho/para/alerts.json --from-start --dry-run
+```
+
+Para integrar com um endpoint compatível ou um mock local, defina `TELEGRAM_API_BASE` (padrão: `https://api.telegram.org`). Os três comandos acima permitem validar o fluxo sem bot.
+
+### 3. Configurar o Telegram
+
+1. No Telegram, fale com **@BotFather**, execute `/newbot` e escolha nome e usuário.
+2. Copie o token retornado e envie `/start` para o seu bot.
+3. Execute o wizard e cole o token quando solicitado. O token não é exibido na tela.
+
+```powershell
+python alerting/webhook_dispatcher.py --setup
+```
+
+O wizard cria `alerting/.env` se necessário, grava o token, descobre o `chat_id` e envia uma mensagem de teste. Para configurar manualmente, copie o exemplo e preencha os valores:
+
+```powershell
+Copy-Item alerting/.env.example alerting/.env
+```
+
+Teste manual:
+
+```powershell
+python alerting/webhook_dispatcher.py --test
+python alerting/webhook_dispatcher.py --test --dry-run
+```
+
+### 4. Alertas em tempo real
+
+```powershell
+python alerting/webhook_dispatcher.py --follow
+```
+
+O dispatcher lê o `alerts.json` do container, filtra nível `>= 10`, aplica cooldown de 120 segundos por regra + IP e envia a mensagem formatada.
+
+### 5. Simulador de ataque
+
+Com o honeypot SSH rodando:
+
+```powershell
+python honeypot/simulate_attack.py
+```
+
+O simulador abre seis conexões com senha incorreta, faz um login válido e executa `whoami`. Isso gera `ssh.login_failed`, `ssh.login` e `ssh.command` no `ssh.log`, além dos alertas `100101` e `100104`.
+
+### 6. Testar SSH manualmente
 
 ```powershell
 ssh admin@localhost -p 2222
-# 1a senha sempre falha de propósito (gera ssh.login_failed)
-# 2a senha entra (qualquer uma)
+# A primeira senha sempre falha; a segunda entra com qualquer valor.
 whoami
 id
 ls
@@ -61,143 +167,107 @@ cat id_rsa
 exit
 ```
 
-Ver o log:
+Para encerrar uma sessão SSH travada, use `~.`.
 
-```powershell
-Get-Content honeypot/logs/ssh.log -Tail 10
-```
-
-### 4. Configurar o Telegram (1 vez)
-
-1. No Telegram, fale com **@BotFather** -> `/newbot` -> escolha nome e usuário.
-2. Copie o **token** que ele devolver e mande `/start` para o seu bot.
-3. Rode o wizard e cole o token quando ele pedir (o token não aparece na tela):
-
-```powershell
-python alerting/webhook_dispatcher.py --setup
-```
-
-O wizard salva o token em `alerting/.env`, descobre o `chat_id`, salva e já
-manda uma mensagem de teste. Se `alerting/.env` não existir:
-`Copy-Item alerting/.env.example alerting/.env`.
-
-### 5. Testar o alerta no celular de novo (opcional)
-
-```powershell
-python alerting/webhook_dispatcher.py --test
-```
-
-Para só ver a mensagem no terminal, sem enviar:
-
-```powershell
-python alerting/webhook_dispatcher.py --test --dry-run
-```
-
-### 6. Deixar o alerta em tempo real
-
-```powershell
-python alerting/webhook_dispatcher.py --follow
-```
-
-Deixe rodando e, em outro terminal, faça 6+ tentativas de SSH com o mesmo IP
-(ver explicação do lote na seção de regras). O dispatcher lê o `alerts.json` do
-container e envia só o que tem nível >= 10.
-
-### 7. Simular o ataque completo (para o vídeo)
-
-Com o honeypot rodando em um terminal e o dispatcher em outro:
-
-```powershell
-python honeypot/simulate_attack.py
-```
-
-O simulador fala SSH de verdade com o honeypot: erra 6 senhas, entra na
-tentativa seguinte e executa `whoami`. Isso gera `ssh.login_failed`,
-`ssh.login` e `ssh.command` no `ssh.log`, e as regras 100101 + 100104 disparam.
-Ele é só uma ferramenta de laboratório; o honeypot continua sendo o alvo.
-
-### 8. Honeypots HTTP e FTP
-
-```powershell
-# Terminal extra: HTTP na 8080
-python honeypot/http_honeypot.py
-# abra http://localhost:8080/.env e http://localhost:8080/admin
-
-# Terminal extra: FTP na 2121 (21 exigiria admin no Windows)
-python honeypot/ftp_honeypot.py
-# ftp admin@localhost -p 2121  (1a senha falha, 2a entra; LIST/RETR mostram isca)
-```
-
-O FTP segue a mesma lógica do SSH: a primeira senha de cada conexão falha de
-propósito para alimentar a regra de brute-force (100110). Log em
-`honeypot/logs/ftp.log`.
-
-## Regras custom (11)
-
-| Regra | Nível | O que detecta |
-|---|---:|---|
-| `100100` | 5 | uma falha de login SSH (base para correlação) |
-| `100101` | 10 | brute-force SSH: 5+ falhas do mesmo IP em 120s |
-| `100102` | 8 | comando de reconhecimento SSH (`id`, `whoami`, `uname`, `cat /etc/passwd`) |
-| `100103` | 12 | login **bem-sucedido** vindo de fora das faixas internas (anomalia de origem) |
-| `100104` | 12 | sequência SSH: falha de login seguida de comando de reconhecimento do mesmo IP |
-| `100105` | 8 | HTTP com User-Agent de ferramenta de scan (sqlmap, nikto, nmap, ffuf...) |
-| `100106` | 8 | HTTP em caminho sensível (isca: `/.env`, `/admin`...) ou path traversal |
-| `100107` | 6 | HTTP POST recebido (todo POST em honeypot é suspeito) |
-| `100108` | 10 | scan HTTP: 10+ acessos a caminhos sensíveis do mesmo IP em 60s |
-| `100109` | 5 | falha de login FTP (base para correlação) |
-| `100110` | 10 | brute-force FTP: 5+ falhas do mesmo IP em 120s |
+## Regras de detecção
 
 Arquivo: `siem/custom_rules/bruteforce_custom.xml`.
 
-Decisões que valem entrevista:
-- `<same_source_ip />` em vez de `<same_srcip />`: a segunda não dispara com log JSON no Wazuh 4.7.2 (testado).
-- `<field type="pcre2">` com `^...$`: o match padrão casa por substring (`ssh.login` casaria `ssh.login_failed`).
-- Só uma regra dispara por evento; por isso a geo (100103) ficou no evento de login com sucesso, sem competir com a 100100.
-- A 100104 **não usa `frequency`**: uma segunda regra de frequency apontando para a 100100 consumia os eventos e impedia a 100101 de disparar. Com `if_sid` (comando atual) + `if_matched_sid` (falha anterior), ela dispara no primeiro comando de recon.
-- No teste manual, use **6 falhas**: o logcollector pode agrupar eventos em lote e a 5ª às vezes é avaliada antes de entrar na janela da 100101. A 6ª garante o disparo.
-- O dispatcher filtra por nível e tem cooldown para não mandar 20 mensagens do mesmo ataque.
+| Regra | Nível | Detecção |
+|---|---:|---|
+| `100100` | 5 | Falha de login SSH (evento base para correlação) |
+| `100101` | 10 | Brute-force SSH: 5+ falhas do mesmo IP em 120 s |
+| `100102` | 8 | Comando de reconhecimento SSH (`id`, `whoami`, `uname`, `cat /etc/passwd`) |
+| `100103` | 12 | Login SSH bem-sucedido de origem externa (heurística CIDR) |
+| `100104` | 12 | Sequência SSH: falha de login seguida de reconhecimento do mesmo IP |
+| `100105` | 8 | HTTP com User-Agent de ferramenta de scan (sqlmap, nikto, nmap, ffuf etc.) |
+| `100106` | 8 | HTTP em caminho sensível (`/.env`, `/admin`, `/.git`) ou path traversal |
+| `100107` | 6 | HTTP POST recebido em formulário falso |
+| `100108` | 10 | Scan HTTP: 10+ acessos a caminhos sensíveis do mesmo IP em 60 s |
+| `100109` | 5 | Falha de login FTP (evento base para correlação) |
+| `100110` | 10 | Brute-force FTP: 5+ falhas do mesmo IP em 120 s |
+
+### Decisões técnicas relevantes
+
+- **`same_source_ip` em vez de `same_srcip`**: com logs JSON no Wazuh 4.7.2, `same_srcip` não disparou de forma confiável; `same_source_ip` funcionou e foi validado no pipeline real.
+- **`pcre2` ancorado (`^...$`)**: o match padrão de `<field>` no Wazuh é por substring, então `ssh.login` também casaria `ssh.login_failed`.
+- **Uma regra por evento**: a `100103` fica no evento de login bem-sucedido para não competir com a `100100` e preservar a correlação de brute-force.
+- **`100104` sem `frequency`**: uma segunda regra de frequency sobre a `100100` consumia eventos e impedia a `100101` de disparar. A sequência usa `if_sid` + `if_matched_sid` + `same_source_ip`.
+- **Seis falhas no teste manual**: o logcollector pode agrupar linhas em lote; a sexta tentativa garante o gatilho da `100101`. Em um ataque real, o volume é maior.
+- **Anti-spam no dispatcher**: o cooldown evita repetição de notificações sem alterar o estado das regras no Wazuh.
 
 ## Dashboard
 
-- URL: **https://localhost:5601**
-- Login do laboratório: **admin / admin**
-- Dashboard pronto: **Purple Honeypot SIEM** (menu Dashboards)
-- O script `siem/create_dashboard.py` recria/atualiza o index pattern e os 5 painéis:
-  alertas por regra, alertas no tempo, top IPs, comandos executados e alertas recentes.
+- URL: `https://localhost:5601`
+- Dashboard: **Purple Honeypot SIEM**
+- Index pattern: `wazuh-alerts-*`
+- Painéis: alertas por regra, timeline, top IPs, comandos executados e alertas recentes.
+
+O dashboard é criado/atualizado por:
 
 ```powershell
 python siem/create_dashboard.py
 ```
 
-O dashboard lê o índice `wazuh-alerts-*`, alimentado pelo Filebeat que já vem
-dentro do container do manager. Se o dashboard abrir com **503** ou
-"Security not initialized", rode uma vez:
+Se o dashboard retornar **503** ou “Security not initialized”, inicialize a segurança do indexer uma vez:
 
 ```powershell
 docker exec -e OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk wazuh-indexer bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh -cd /usr/share/wazuh-indexer/opensearch-security -icl -nhnv -cacert /usr/share/wazuh-indexer/certs/root-ca.pem -cert /usr/share/wazuh-indexer/certs/admin.pem -key /usr/share/wazuh-indexer/certs/admin-key.pem
 ```
 
-## Estrutura
+O `setup.sh` executa esse procedimento automaticamente quando necessário.
 
-```
+## Estrutura do repositório
+
+```text
 Purple-Honeypot-SIEM/
-├── honeypot/ssh_honeypot.py, http_honeypot.py, ftp_honeypot.py, simulate_attack.py, logs/
-├── siem/docker-compose.yml, filebeat.yml (referência), custom_rules/bruteforce_custom.xml
-├── siem/create_dashboard.py
-├── alerting/webhook_dispatcher.py, .env.example, teams_alert.ps1
-├── deploy/setup.sh
-└── docs/architecture.md, RELATORIO.md, demo_video_link.md
+├── README.md
+├── LICENSE
+├── requirements.txt
+├── honeypot/
+│   ├── ssh_honeypot.py
+│   ├── http_honeypot.py
+│   ├── ftp_honeypot.py
+│   ├── simulate_attack.py
+│   └── logs/                  # ignorado pelo git
+├── siem/
+│   ├── docker-compose.yml
+│   ├── custom_rules/bruteforce_custom.xml
+│   ├── create_dashboard.py
+│   ├── filebeat.yml
+│   └── OSSEC-MANUAL-CHANGES.md
+├── alerting/
+│   ├── webhook_dispatcher.py
+│   ├── .env.example
+│   └── teams_alert.ps1
+├── deploy/
+│   └── setup.sh
+└── docs/
+    ├── architecture.md
+    ├── RELATORIO.md
+    └── img/                   # capturas do dashboard e do Telegram
 ```
 
-## Status do projeto
+## Segurança do laboratório
 
-Concluído e testado na mão: honeypots SSH/HTTP/FTP, simulador de ataque SSH, ingestão no Wazuh (3 protocolos), 11 regras custom (SSH/HTTP/FTP), brute-force/sequência/geo/scan disparando no `alerts.json`, dispatcher Wazuh -> Telegram com **mensagens reais no celular** (100101 e 100104), e dashboard `Purple Honeypot SIEM` com 5 painéis.
+- O honeypot SSH aceita qualquer senha a partir da segunda tentativa e registra a senha em texto claro. Isso é intencional para gerar telemetria e **não deve ser usado em produção**.
+- Não exponha as portas 2222, 8080 ou 2121 diretamente à internet sem isolamento de rede, limites de conexão e monitoramento.
+- `alerting/.env` e `honeypot/host.key` são ignorados pelo Git. Nunca faça commit deles.
+- As credenciais e chaves exibidas pelos honeypots são fictícias.
+- Em produção: TLS válido, RBAC, cofre de segredos, GeoIP real, segmentação de rede e retenção definida.
 
-Pendente: vídeo de 2-3 min com o simulador e simulação de entrevista.
+## Status e roadmap
 
-## O que NÃO fazer
+**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom (10 validadas ao vivo e a `100108` validada com eventos injetados no pipeline), dispatcher Wazuh → Telegram com mensagens reais (`100101` e `100104`), dashboard com cinco painéis e setup idempotente.
 
-- Não commitar `alerting/.env` nem `honeypot/host.key` (já estão no `.gitignore`).
-- Não prometer "Filebeat lê os logs crus": nesse projeto o Wazuh lê os arquivos via `localfile`; o Filebeat que existe na stack é o oficial do Wazuh, que envia os **alertas** para o indexer.
-- Não usar as senhas reais em lugar nenhum: o honeypot aceita qualquer senha de propósito, só para gerar telemetria.
+**Próximos passos:** gravar a demo de 2–3 minutos, adicionar GeoIP real, criar testes automatizados de regressão das regras e evoluir para HA/retenção de longo prazo.
+
+## Documentação
+
+- [`docs/architecture.md`](docs/architecture.md) — arquitetura, decisões e limitações.
+- [`docs/RELATORIO.md`](docs/RELATORIO.md) — case técnico completo, incluindo o diagnóstico do bug de correlação da `100101`.
+- [`docs/img/`](docs/img/) — capturas do dashboard e do alerta no Telegram.
+
+## Licença
+
+Distribuído sob a licença MIT. Consulte [`LICENSE`](LICENSE).
