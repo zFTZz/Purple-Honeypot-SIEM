@@ -1,15 +1,15 @@
-# Mudanças manuais no ossec.conf (DENTRO do container — NÃO estão no git!)
+# Configuração manual do ossec.conf (volume do container)
 
-O volume `siem_wazuh-manager-etc` guarda o `/var/ossec/etc` e sobrevive a
-`docker restart`. Se o volume for apagado, refazer os blocos abaixo via
-`docker exec` (ou recriar o volume com a config default da imagem).
+O volume `siem_wazuh-manager-etc` armazena `/var/ossec/etc` e sobrevive a
+reinícios do container. Se o volume for removido, recrie os blocos abaixo ou
+execute novamente `deploy/setup.sh`, que adiciona apenas os `localfile` ausentes.
 
 ## 1. Ingestão dos logs do honeypot (JSON lines)
 
 ```sh
 docker exec -i wazuh-manager tee -a /var/ossec/etc/ossec.conf >/dev/null <<'EOF'
 
-<!-- Projeto 1: honeypot logs em JSON -->
+<!-- Purple Honeypot SIEM: logs JSON -->
 <ossec_config>
   <localfile>
     <log_format>json</log_format>
@@ -29,24 +29,25 @@ docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-analysisd -t && echo CONFI
 docker restart wazuh-manager
 ```
 
-Os arquivos `http.log` e `ftp.log` precisam existir. Se ainda não rodou os honeypots, crie vazios:
+Os arquivos `ssh.log`, `http.log` e `ftp.log` precisam existir. O `setup.sh`
+cria os três automaticamente; para criar manualmente:
 
 ```powershell
 New-Item -ItemType File -Force honeypot/logs/http.log
 New-Item -ItemType File -Force honeypot/logs/ftp.log
 ```
 
-## 2. O que já está no git e volta sozinho
+## 2. O que já está versionado no repositório
 
 - `siem/docker-compose.yml`: mounts das regras e de `honeypot/logs`.
-- `siem/custom_rules/bruteforce_custom.xml`: regras 100100-100110 (SSH/HTTP/FTP).
-- `.gitignore`: `honeypot/logs/` e `alerting/.env` não vão pro repositório.
+- `siem/custom_rules/bruteforce_custom.xml`: regras 100100–100110 (SSH/HTTP/FTP).
+- `.gitignore`: `honeypot/logs/`, `alerting/.env` e `honeypot/host.key`.
 
 ## 3. Debug temporário
 
-`logall yes` no ossec.conf grava todos os eventos em `archives.json`; foi usado
-só para provar a ingestão e depois revertido. Não deixe ligado em produção
-(disco e dado sensível).
+A opção `logall yes` no `ossec.conf` grava todos os eventos em `archives.json`.
+Foi usada apenas para comprovar a ingestão e depois revertida. Não deixe ativada
+em produção: aumenta o consumo de disco e a exposição de dados sensíveis.
 
 ```sh
 docker exec wazuh-manager grep -n logall /var/ossec/etc/ossec.conf

@@ -1,18 +1,18 @@
-# Referência — NÃO é um container separado do projeto.
+# Referência de configuração — o Filebeat não é um container separado da stack.
 #
-# A imagem oficial wazuh/wazuh-manager:4.7.2 já traz o Filebeat 7.10.2 dentro
-# do container. Ele lê os alertas gerados pelo Wazuh e envia para o indexer:
+# A imagem oficial wazuh/wazuh-manager:4.7.2 já inclui o Filebeat 7.10.2 dentro
+# do container. Ele lê os alertas gerados pelo Wazuh e envia ao indexer:
 #
 #   /var/ossec/logs/alerts/alerts.json -> Filebeat -> wazuh-indexer:9200
 #
-# Ou seja: o honeypot -> Wazuh acontece por <localfile> no ossec.conf
-# (ver siem/OSSEC-MANUAL-CHANGES.md). O Filebeat cuida do trecho
-# Wazuh -> indexer/dashboard, que é o desenho oficial da stack.
+# A ingestão honeypot -> Wazuh acontece por <localfile> no ossec.conf
+# (ver siem/OSSEC-MANUAL-CHANGES.md). O Filebeat cobre o trecho
+# Wazuh -> indexer/dashboard, conforme o desenho oficial da stack.
 #
 # Config real dentro do container: /etc/filebeat/filebeat.yml
 # Para conferir:
 #   docker exec wazuh-manager cat /etc/filebeat/filebeat.yml
-#   docker exec wazuh-manager ps aux | findstr filebeat
+#   docker exec wazuh-manager sh -c "ps aux | grep filebeat"
 #
 # Resumo da config que já vem na imagem:
 filebeat.modules:

@@ -1,8 +1,8 @@
-<!-- Projeto 1: Regras custom do Wazuh sobre os logs JSON do honeypot.
-     Campos do log: type, src_ip (+ alias srcip), user, password, command, timestamp.
-     Regras: 100100 base | 100101 brute-force | 100102 recon | 100103 origem externa | 100104 sequência
-     Dica p/ manutenção: todo <field> que compara texto exato usa type="pcre2" com ^...$,
-     porque o match padrão do Wazuh casa por substring (ssh.login casaria ssh.login_failed). -->
+<!-- Regras customizadas do Purple Honeypot SIEM para logs JSON dos honeypots SSH, HTTP e FTP.
+     Campos: type, src_ip (+ alias srcip), user, password, command, timestamp.
+     Regras: 100100-100104 (SSH) | 100105-100108 (HTTP) | 100109-100110 (FTP)
+     Convenção de manutenção: todo <field> de texto exato usa type="pcre2" com ^...$,
+     porque o match padrão do Wazuh é por substring (ssh.login casaria ssh.login_failed). -->
 <group name="honeypot,">
 
   <!-- 100100: falha isolada. Nível baixo, serve de base para as correlações. -->
@@ -11,12 +11,12 @@
     <description>Honeypot SSH: tentativa de login falhou.</description>
   </rule>
 
-  <!-- 100101: brute-force. 5+ falhas do MESMO IP em 120s.
-       ATENÇÃO: usar same_source_ip e NÃO same_srcip. Testado no Wazuh 4.7.2:
-       com same_srcip a regra nunca dispara em log JSON (campo srcip em data.*).
+  <!-- 100101: brute-force. Cinco ou mais falhas do mesmo IP em 120 segundos.
+       Observação: usar same_source_ip e não same_srcip. No Wazuh 4.7.2, same_srcip
+       não dispara de forma confiável com logs JSON (campo srcip em data.*).
        O anti-spam fica no dispatcher (cooldown), não no ignore do Wazuh.
-       No teste manual, envie 6 falhas: o logcollector pode agrupar eventos em
-       lote e a 5ª tentativa pode ser avaliada antes de entrar na janela. -->
+       Em teste manual, envie seis falhas: o logcollector pode agrupar eventos em
+       lote e a quinta tentativa pode ser avaliada antes de entrar na janela. -->
   <rule id="100101" level="10" frequency="5" timeframe="120">
     <if_matched_sid>100100</if_matched_sid>
     <same_source_ip />
@@ -32,11 +32,11 @@
     <group>reconnaissance,attack</group>
   </rule>
 
-  <!-- 100103: anomalia de origem. Um login BEM-SUCEDIDO vindo de fora das faixas
-       internas (10/8, 172.16/12, 192.168/16, 127/8) é crítico: pode ser conta
-       comprometida. Fica no evento ssh.login para não competir com a 100100
-       (falha) — no Wazuh só 1 regra dispara por evento.
-       Em produção o próximo passo seria enriquecer com GeoIP (MaxMind/ipinfo). -->
+  <!-- 100103: anomalia de origem. Um login bem-sucedido vindo de fora das faixas
+       internas (10/8, 172.16/12, 192.168/16, 127/8) é crítico e pode indicar
+       conta comprometida. Fica no evento ssh.login para não competir com a 100100:
+       no Wazuh, apenas uma regra dispara por evento.
+       Em produção, o próximo passo é enriquecer com GeoIP (MaxMind/ipinfo). -->
   <rule id="100103" level="12" ignore="300">
     <field name="type" type="pcre2">^ssh\.login$</field>
     <field name="src_ip" type="pcre2" negate="yes">^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.)</field>
@@ -45,11 +45,11 @@
   </rule>
 
   <!-- 100104: sequência suspeita. Falha de login seguida de comando de
-       reconhecimento pelo MESMO IP em até 5 min.
-       IMPORTANTE: NÃO usar frequency aqui. Testado no Wazuh 4.7.2: uma segunda
-       regra de frequency apontando para 100100 "consome" os eventos e impede a
-       100101 de disparar. Sem frequency, o if_matched_sid casa a falha anterior
-       e a regra dispara já no primeiro comando de recon. -->
+       reconhecimento pelo mesmo IP em até 5 minutos.
+       Importante: não usar frequency aqui. No Wazuh 4.7.2, uma segunda regra
+       de frequency apontando para a 100100 consome os eventos e impede a 100101
+       de disparar. Sem frequency, if_matched_sid encontra a falha anterior e a
+       regra dispara no primeiro comando de reconhecimento. -->
   <rule id="100104" level="12" timeframe="300">
     <if_sid>100102</if_sid>
     <if_matched_sid>100100</if_matched_sid>
@@ -60,9 +60,9 @@
 
   <!-- ===================== REGRAS HTTP (http.request) ===================== -->
 
-  <!-- 100105: user-agent de ferramenta de scanner (sqlmap, nikto, nmap, ffuf...).
-       Precisa vir ANTES da 100106/100107: o Wazuh dispara a primeira regra que
-       casa, então o scan com POST é atribuído à ferramenta (mais informativo). -->
+  <!-- 100105: User-Agent de ferramenta de scanner (sqlmap, nikto, nmap, ffuf etc.).
+       É avaliada antes da 100106/100107: o Wazuh dispara a primeira regra que
+       casa, então um scan com POST é atribuído à ferramenta (mais informativo). -->
   <rule id="100105" level="8">
     <field name="type" type="pcre2">^http\.request$</field>
     <field name="user_agent" type="pcre2">(?i)(sqlmap|nikto|nmap|masscan|ffuf|gobuster|dirbuster|wfuzz|zgrab|acunetix|nessus|openvas|dirsearch|feroxbuster)</field>
@@ -70,35 +70,35 @@
     <group>reconnaissance,web,attack</group>
   </rule>
 
-  <!-- 100106: acesso a isca sensivel ou path traversal. -->
+  <!-- 100106: acesso a isca sensível ou path traversal. -->
   <rule id="100106" level="8">
     <field name="type" type="pcre2">^http\.request$</field>
     <field name="path" type="pcre2">(?i)(\.env|\.git|/admin|config\.php|/backup|\.\./)</field>
-    <description>Honeypot HTTP: acesso a caminho sensivel (isca) ou path traversal.</description>
+    <description>Honeypot HTTP: acesso a caminho sensível (isca) ou path traversal.</description>
     <group>web,attack</group>
   </rule>
 
-  <!-- 100107: POST recebido. Em honeypot todo POST e suspeito (tentativa de
-       login/formulario em sistema que nao existe de verdade). -->
+  <!-- 100107: POST recebido. Em honeypot, todo POST é suspeito: indica tentativa
+       de login ou submissão de formulário em um sistema que não existe de verdade. -->
   <rule id="100107" level="6">
     <field name="type" type="pcre2">^http\.request$</field>
     <field name="method" type="pcre2">^POST$</field>
-    <description>Honeypot HTTP: requisicao POST recebida (tentativa de submissao em formulario falso).</description>
+    <description>Honeypot HTTP: requisição POST recebida (tentativa de submissão em formulário falso).</description>
     <group>web</group>
   </rule>
 
-  <!-- 100108: scan sequencial — mesmo IP bateu em 10+ caminhos sensiveis em 60s.
-       Usa o mesmo principio da 100101 (frequency + same_source_ip). -->
+  <!-- 100108: scan sequencial — o mesmo IP acessou 10+ caminhos sensíveis em 60s.
+       Usa o mesmo princípio da 100101 (frequency + same_source_ip). -->
   <rule id="100108" level="10" frequency="10" timeframe="60">
     <if_matched_sid>100106</if_matched_sid>
     <same_source_ip />
-    <description>Honeypot HTTP: possivel scan/fuzzing, 10+ acessos a caminhos sensiveis do mesmo IP em 1 minuto.</description>
+    <description>Honeypot HTTP: possível scan/fuzzing, 10+ acessos a caminhos sensíveis do mesmo IP em 1 minuto.</description>
     <group>web,brute_force,reconnaissance</group>
   </rule>
 
   <!-- ===================== REGRAS FTP (ftp.login*) ===================== -->
 
-  <!-- 100109: falha de login FTP (base p/ correlacao, espelho da 100100). -->
+  <!-- 100109: falha de login FTP (base para correlação, espelho da 100100). -->
   <rule id="100109" level="5">
     <field name="type" type="pcre2">^ftp\.login_failed$</field>
     <description>Honeypot FTP: tentativa de login falhou.</description>
@@ -108,7 +108,7 @@
   <rule id="100110" level="10" frequency="5" timeframe="120">
     <if_matched_sid>100109</if_matched_sid>
     <same_source_ip />
-    <description>Honeypot FTP: possivel brute-force, 5+ falhas do mesmo IP em 2 minutos.</description>
+    <description>Honeypot FTP: possível brute-force, 5+ falhas do mesmo IP em 2 minutos.</description>
     <group>authentication_failures,brute_force</group>
   </rule>
 

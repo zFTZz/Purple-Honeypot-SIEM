@@ -1,12 +1,12 @@
 """
-Cria o dashboard do Projeto 1 no Wazuh Dashboard (OpenSearch Dashboards).
+Cria o dashboard do Purple Honeypot SIEM no Wazuh Dashboard (OpenSearch Dashboards).
 
 Uso (com o dashboard em https://localhost:5601):
     python siem/create_dashboard.py
 
-O script e idempotente: procura os objetos pelo titulo e atualiza se ja existirem.
-Nao imprime senha. As credenciais padrao do laboratorio sao admin/admin; para
-outro ambiente, use --username/--password ou as variaveis OSD_USER/OSD_PASSWORD.
+O script é idempotente: procura os objetos pelo título e atualiza os existentes.
+Não imprime senha. As credenciais padrão do laboratório são admin/admin; para
+outro ambiente, use --username/--password ou as variáveis OSD_USER/OSD_PASSWORD.
 """
 import argparse
 import http.cookiejar
@@ -341,7 +341,7 @@ def command_vis():
 def recent_search():
     return {
         "title": SEARCH_TITLE,
-        "description": "Ultimos alertas com regra, IP, usuario e comando.",
+        "description": "Últimos alertas com regra, IP, usuário e comando.",
         "columns": ["@timestamp", "rule.id", "rule.level", "rule.description", "data.srcip", "data.user", "data.command"],
         "sort": [["@timestamp", "desc"]],
         "version": 1,
@@ -375,7 +375,7 @@ def dashboard_obj(panel_ids):
         refs.append({"name": ref_name, "type": panel_type, "id": panel_ids[kind]})
     attributes = {
         "title": DASH_TITLE,
-        "description": "Visao do honeypot SSH/HTTP: regras, volume, IPs, comandos e alertas recentes.",
+        "description": "Visão do honeypot SSH/HTTP/FTP: regras, volume, IPs, comandos e alertas recentes.",
         "panelsJSON": json.dumps(panels, ensure_ascii=False),
         "optionsJSON": json.dumps({"useMargins": True, "syncColors": False, "hidePanelTitles": False}),
         "version": 1,

@@ -8,7 +8,7 @@
 param(
     [string]$WebhookUrl = $env:TEAMS_WEBHOOK_URL,
     [string]$Title = "Alerta SOC - Purple Honeypot SIEM",
-    [string]$Text = "Teste de integração do Projeto 1."
+    [string]$Text = "Teste de integração do Purple Honeypot SIEM."
 )
 
 if ([string]::IsNullOrWhiteSpace($WebhookUrl)) {

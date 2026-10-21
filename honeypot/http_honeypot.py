@@ -1,18 +1,23 @@
 """
-PROJETO 1 - http_honeypot.py
-O que faz: finge ser um painel admin / site com .env exposto pra atrair scanner (nmap, ffuf, Burp).
-Captura: IP, metodo, caminho pedido, User-Agent. Tudo em JSON pro Wazuh.
-Rodar: python honeypot/http_honeypot.py (porta 8080, abre no browser http://localhost:8080)
+Honeypot HTTP do Purple Honeypot SIEM.
+
+Simula um painel administrativo e um site com arquivos sensíveis expostos para
+atrair scanners. Registra IP, método, caminho, User-Agent e corpo da requisição
+em JSON, com timestamp UTC.
+
+Uso:
+    python honeypot/http_honeypot.py
+    http://localhost:8080/
 """
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import datetime
 import os
 
-PORT = 8080  # 80 exigiria root, 8080 roda normal. No Wazuh voce vai ver scan em /admin /.env /.git
+PORT = 8080  # 80 exigiria privilégios administrativos; 8080 roda como usuário comum
 LOG_FILE = os.path.join(os.path.dirname(__file__), "logs", "http.log")
 
-# Iscas que scanner sempre testa. Se pedir uma dessas, e quase certo que e ataque/recon
+# Caminhos que scanners testam com frequência; acessos a eles são tratados como reconhecimento.
 CAMINHOS_SUSPEITOS = ("/admin", "/login", "/.env", "/.git", "/config.php", "/backup", "/robots.txt")
 
 
@@ -20,13 +25,13 @@ def gravar_log(evento: dict):
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     evento["timestamp"] = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     if "src_ip" in evento:
-        evento["srcip"] = evento["src_ip"]  # alias p/ same_srcip das regras Wazuh
+        evento["srcip"] = evento["src_ip"]  # alias usado pelas regras de correlação
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(evento) + "\n")
 
 
 class Handler(BaseHTTPRequestHandler):
-    # Silencia log padrao do http.server (senao polui o terminal)
+    # Silencia o log padrão do http.server para manter o terminal limpo.
     def log_message(self, *args):
         return
 
@@ -51,23 +56,26 @@ class Handler(BaseHTTPRequestHandler):
             "suspicious": self.path in CAMINHOS_SUSPEITOS or ".." in self.path,
         })
 
-        # Iscas: devolve algo tentador pra atacante continuar e gerar mais log
+        # Iscas: respostas que incentivam o scanner a continuar e gerar mais telemetria.
         if self.path == "/.env":
             self._responder(200, b"DB_PASSWORD=supersecreta123\nAWS_KEY=FAKEKEY123\n")
         elif self.path == "/robots.txt":
             self._responder(200, b"User-agent: *\nDisallow: /admin\n")
         elif self.path.startswith("/admin"):
-            self._responder(200, b"<h1>Admin login</h1><form>user:<input><br>pass:<input type=password></form>".decode().encode(),
-                            b"text/html")
+            self._responder(
+                200,
+                b"<h1>Admin login</h1><form>user:<input><br>pass:<input type=password></form>",
+                b"text/html",
+            )
         else:
             self._responder(200, b"<h1>Loja demo</h1><p>Bem-vindo</p>", b"text/html")
 
-    # POST (ex: /login com user/senha) tambem interessa pro SOC
+    # POST (por exemplo, /login com usuário e senha) também é relevante para o SOC.
     def do_POST(self):
         ip = self.client_address[0]
         tamanho = int(self.headers.get("Content-Length", 0))
-        corpo = self.rfile.read(tamanho).decode(errors="ignore")[:2000]  # corta pra nao encher disco
-        print(f"[HTTP] {ip} POST {self.path} body={corpo[:80]}")
+        corpo = self.rfile.read(tamanho).decode(errors="ignore")[:2000]  # limite para não encher o disco
+        print(f"[HTTP] {ip} POST {self.path}")
         gravar_log({
             "type": "http.request",
             "src_ip": ip,
@@ -75,7 +83,7 @@ class Handler(BaseHTTPRequestHandler):
             "path": self.path,
             "user_agent": self.headers.get("User-Agent", "unknown"),
             "body": corpo,
-            "suspicious": True,  # POST em honeypot sempre trata como suspeito
+            "suspicious": True,  # todo POST em honeypot é tratado como suspeito
         })
         self._responder(200, b"OK")
 

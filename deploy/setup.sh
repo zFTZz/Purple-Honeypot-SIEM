@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Instalacao/verificacao do Purple Honeypot SIEM.
-# Rode na raiz do repo: bash deploy/setup.sh
+# Instalação e verificação do Purple Honeypot SIEM.
+# Execute na raiz do repositório: bash deploy/setup.sh
 # Testado no Git Bash (Windows) com Docker Desktop.
 set -euo pipefail
 
-# Git Bash no Windows converte /var/... para C:\Program Files\Git\var\...
-# e quebra os comandos docker exec. Desliga essa conversao (ignorado no Linux).
+# O Git Bash converte /var/... para C:\Program Files\Git\var\... e quebra
+# comandos docker exec. Desabilita a conversão (ignorado em Linux/macOS).
 export MSYS_NO_PATHCONV=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,18 +14,18 @@ COMPOSE=(docker compose -f siem/docker-compose.yml)
 INDEXER_HEALTH="https://localhost:9200/_cluster/health"
 DASHBOARD="https://localhost:5601"
 
-echo "=== Purple Honeypot SIEM - setup ==="
-command -v docker >/dev/null || { echo "[!] Docker nao encontrado no PATH."; exit 1; }
-docker info >/dev/null 2>&1 || { echo "[!] Docker Desktop nao esta rodando."; exit 1; }
-command -v curl >/dev/null || { echo "[!] curl nao encontrado."; exit 1; }
+echo "=== Purple Honeypot SIEM — setup ==="
+command -v docker >/dev/null || { echo "[!] Docker não encontrado no PATH."; exit 1; }
+docker info >/dev/null 2>&1 || { echo "[!] Docker Desktop não está em execução."; exit 1; }
+command -v curl >/dev/null || { echo "[!] curl não encontrado."; exit 1; }
 
-echo "[*] Pastas e logs..."
+echo "[*] Preparando diretórios e arquivos de log..."
 mkdir -p honeypot/logs
-touch honeypot/logs/ssh.log honeypot/logs/http.log
+touch honeypot/logs/ssh.log honeypot/logs/http.log honeypot/logs/ftp.log
 
 if [ ! -f alerting/.env ]; then
   cp alerting/.env.example alerting/.env
-  echo "[+] alerting/.env criado. Depois rode: python alerting/webhook_dispatcher.py --setup"
+  echo "[+] alerting/.env criado. Depois execute: python alerting/webhook_dispatcher.py --setup"
 fi
 
 echo "[*] Subindo containers (indexer, manager, dashboard)..."
@@ -39,15 +39,15 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 if [ "$INDEXER_READY" -ne 1 ]; then
-  echo "[!] Indexer nao respondeu em https://localhost:9200."
+  echo "[!] Indexer não respondeu em https://localhost:9200."
   echo "    Veja: docker logs wazuh-indexer --tail 50"
   exit 1
 fi
 
-echo "[*] Verificando o indice de seguranca do indexer..."
+echo "[*] Verificando o índice de segurança do indexer..."
 HEALTH="$(curl -k -s -u admin:admin "$INDEXER_HEALTH" || true)"
 if ! printf '%s' "$HEALTH" | grep -q '"status"'; then
-  echo "[*] Inicializando seguranca (primeira subida)..."
+  echo "[*] Inicializando a segurança do indexer (primeira subida)..."
   docker exec -e OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk wazuh-indexer \
     bash /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh \
     -cd /usr/share/wazuh-indexer/opensearch-security -icl -nhnv \
@@ -58,40 +58,55 @@ if ! printf '%s' "$HEALTH" | grep -q '"status"'; then
   HEALTH="$(curl -k -s -u admin:admin "$INDEXER_HEALTH" || true)"
 fi
 if ! printf '%s' "$HEALTH" | grep -q '"status"'; then
-  echo "[!] Seguranca do indexer ainda nao inicializou."
+  echo "[!] A segurança do indexer ainda não inicializou."
   echo "    Veja: docker logs wazuh-indexer --tail 50"
   exit 1
 fi
 echo "[+] Indexer OK."
 
-if docker exec wazuh-manager true >/dev/null 2>&1; then
-  if ! docker exec wazuh-manager grep -q '/var/log/honeypot/ssh.log' /var/ossec/etc/ossec.conf; then
-    echo "[*] Adicionando os localfile do honeypot no ossec.conf (volume)..."
-    docker exec -i wazuh-manager tee -a /var/ossec/etc/ossec.conf >/dev/null <<'EOF'
+# Adiciona somente os localfiles que ainda não existem no volume do manager.
+adicionar_localfiles() {
+  local faltantes=()
+  local arquivo
+  for arquivo in ssh http ftp; do
+    if ! docker exec wazuh-manager grep -q "/var/log/honeypot/${arquivo}.log" /var/ossec/etc/ossec.conf 2>/dev/null; then
+      faltantes+=("$arquivo")
+    fi
+  done
 
-<!-- Projeto 1: honeypot logs em JSON -->
-<ossec_config>
-  <localfile>
-    <log_format>json</log_format>
-    <location>/var/log/honeypot/ssh.log</location>
-  </localfile>
-  <localfile>
-    <log_format>json</log_format>
-    <location>/var/log/honeypot/http.log</location>
-  </localfile>
-</ossec_config>
-EOF
-    docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-analysisd -t' || {
-      echo "[!] ossec.conf invalido; veja a mensagem acima."; exit 1;
-    }
-    docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control restart' >/dev/null 2>&1 || true
-    sleep 8
-    docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control status' | grep -q 'wazuh-analysisd is running' || \
-      docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control start' >/dev/null 2>&1 || true
+  if [ "${#faltantes[@]}" -eq 0 ]; then
+    echo "[=] localfiles do honeypot já configurados."
+    return
   fi
+
+  echo "[*] Adicionando localfile: ${faltantes[*]}"
+  {
+    echo ""
+    echo "<!-- Purple Honeypot SIEM: logs JSON -->"
+    echo "<ossec_config>"
+    for arquivo in "${faltantes[@]}"; do
+      echo "  <localfile>"
+      echo "    <log_format>json</log_format>"
+      echo "    <location>/var/log/honeypot/${arquivo}.log</location>"
+      echo "  </localfile>"
+    done
+    echo "</ossec_config>"
+  } | docker exec -i wazuh-manager tee -a /var/ossec/etc/ossec.conf >/dev/null
+
+  docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-analysisd -t' || {
+    echo "[!] ossec.conf inválido; veja a mensagem acima."; exit 1;
+  }
+  docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control restart' >/dev/null 2>&1 || true
+  sleep 8
+  docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control status' | grep -q 'wazuh-analysisd is running' || \
+    docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control start' >/dev/null 2>&1 || true
+}
+
+if docker exec wazuh-manager true >/dev/null 2>&1; then
+  adicionar_localfiles
   echo "[+] Manager configurado."
 else
-  echo "[!] Container wazuh-manager nao esta rodando; pulei o localfile."
+  echo "[!] Container wazuh-manager não está em execução; localfiles não configurados."
 fi
 
 echo "[*] Aguardando o dashboard..."
@@ -103,24 +118,25 @@ done
 CODE="$(curl -k -s -o /dev/null -w '%{http_code}' "$DASHBOARD/app/login" | tr -d '\r' || true)"
 if [ "$CODE" = "200" ]; then
   echo "[+] Dashboard OK."
-  if command -v python >/dev/null 2>&1; then
-    echo "[*] Criando/atualizando o dashboard e os paineis..."
-    python siem/create_dashboard.py || echo "[!] Nao consegui criar o dashboard; abra o menu Dashboards e importe/edite manualmente."
+  PYTHON_BIN="$(command -v python3 || command -v python || true)"
+  if [ -n "$PYTHON_BIN" ]; then
+    echo "[*] Criando/atualizando o dashboard e os painéis..."
+    "$PYTHON_BIN" siem/create_dashboard.py || echo "[!] Não foi possível criar o dashboard; abra o menu Dashboards e ajuste manualmente."
   else
-    echo "[!] Python nao encontrado; crie o dashboard pela interface."
+    echo "[!] Python não encontrado; crie o dashboard pela interface."
   fi
 else
-  echo "[!] Dashboard ainda nao respondeu em $DASHBOARD."
+  echo "[!] O dashboard ainda não respondeu em $DASHBOARD."
   echo "    Veja: docker logs wazuh-dashboard --tail 50"
 fi
 
 echo
 echo "=== Pronto ==="
-echo "Dashboard:  $DASHBOARD  (admin/admin no laboratorio)"
+echo "Dashboard:  $DASHBOARD  (admin/admin no laboratório)"
 echo "Regras:     siem/custom_rules/bruteforce_custom.xml"
 echo "Telegram:   python alerting/webhook_dispatcher.py --setup"
 echo "Honeypot:   python honeypot/ssh_honeypot.py"
 echo "Dispatcher: python alerting/webhook_dispatcher.py --follow"
 echo "Simulador:  python honeypot/simulate_attack.py"
 echo
-echo "Lembrete: nao commite alerting/.env nem honeypot/host.key."
+echo "Lembrete: não faça commit de alerting/.env nem de honeypot/host.key."

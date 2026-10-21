@@ -1,24 +1,25 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Projeto 1 - webhook_dispatcher.py
-Ponte Wazuh -> Telegram para alertas de nivel alto (>= 10 por padrao).
+Dispatcher de alertas do Purple Honeypot SIEM.
 
-O que faz:
-  1. Le o arquivo de alertas do Wazuh (alerts.json) em tempo real.
-  2. Filtra somente alertas que importam (level >= MIN_LEVEL).
-  3. Evita spam do mesmo IP/regra por alguns minutos (cooldown).
-  4. Monta uma mensagem PT-BR e envia pela API do Telegram.
+Ponte Wazuh -> Telegram para alertas de nível alto (>= 10 por padrão).
 
-Como rodar (Windows, com o Wazuh no ar):
-  python alerting/webhook_dispatcher.py --test     # manda 1 alerta fake (prova o token)
-  python alerting/webhook_dispatcher.py --follow   # fica ouvindo o Wazuh
+Responsabilidades:
+  1. Ler o arquivo de alertas do Wazuh (alerts.json) em tempo real.
+  2. Filtrar somente alertas que atendam ao nível mínimo configurado.
+  3. Evitar repetição do mesmo IP/regra por um período de cooldown.
+  4. Montar uma mensagem em português e enviar pela API do Telegram.
 
-Teste sem Telegram (nao envia, so mostra no terminal):
+Uso (Windows, com o Wazuh em execução):
+  python alerting/webhook_dispatcher.py --test     # envia um alerta de exemplo
+  python alerting/webhook_dispatcher.py --follow   # acompanha os alertas do Wazuh
+
+Teste sem Telegram:
   python alerting/webhook_dispatcher.py --test --dry-run
   python alerting/webhook_dispatcher.py --follow --dry-run
 
-Credenciais: alerting/.env (NAO vai pro git) ou variaveis de ambiente.
+Credenciais: alerting/.env (ignorado pelo Git) ou variáveis de ambiente.
 """
 
 import argparse
@@ -43,7 +44,7 @@ DEFAULT_ALERTS_PATH = "/var/ossec/logs/alerts/alerts.json"
 
 
 def carregar_env():
-    """Le alerting/.env no formato CHAVE=VALOR. Variavel de ambiente tem prioridade."""
+    """Lê alerting/.env no formato CHAVE=VALOR. Variável de ambiente tem prioridade."""
     if not ENV_FILE.exists():
         return
     for linha in ENV_FILE.read_text(encoding="utf-8").splitlines():
@@ -80,17 +81,23 @@ def nivel_visual(level):
 
 
 def acao_sugerida(rule_id):
-    """Sugestao curta de resposta. Entrevistador gosta de ver que voce sabe o 'e agora?'."""
+    """Sugere uma ação inicial de triagem para cada regra do honeypot."""
     acoes = {
         "100101": "Bloquear o IP no firewall e revisar as tentativas SSH.",
-        "100103": "Investigar o login externo: possível conta/host comprometido.",
+        "100103": "Investigar o login externo: possível conta ou host comprometido.",
         "100104": "Revisar os comandos executados e considerar isolar o host.",
+        "100105": "Investigar a origem do scanner e avaliar bloqueio no perímetro.",
+        "100106": "Verificar a tentativa de acesso a arquivo sensível e bloquear a origem.",
+        "100107": "Analisar o POST recebido: pode ser tentativa de login ou exploração.",
+        "100108": "Bloquear o IP: varredura sequencial de caminhos sensíveis.",
+        "100109": "Monitorar tentativas de FTP e correlacionar com outros serviços.",
+        "100110": "Bloquear o IP e revisar tentativas de brute-force FTP.",
     }
     return acoes.get(str(rule_id), "Triar o alerta e correlacionar com outros eventos.")
 
 
 def montar_mensagem(alert):
-    """Transforma o JSON do Wazuh em mensagem legivel. Usa HTML pra nao quebrar com _ ou *."""
+    """Transforma o JSON do Wazuh em uma mensagem legível. Usa HTML para preservar caracteres especiais."""
     rule = alert.get("rule", {})
     data = alert.get("data", {}) or {}
     level = int(rule.get("level", 0) or 0)
@@ -154,10 +161,13 @@ def obter_atualizacoes():
 
 
 def salvar_env(chave, valor):
-    """Atualiza ou adiciona CHAVE=valor no alerting/.env, sem tocar no token."""
+    """Atualiza ou adiciona CHAVE=valor no alerting/.env, criando o arquivo se necessário."""
     if not ENV_FILE.exists():
-        print(f"[!] {ENV_FILE} não existe. Copie de .env.example primeiro.")
-        return False
+        ENV_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ENV_FILE.write_text(
+            "# Configuração local do Purple Honeypot SIEM. Não versione este arquivo.\n",
+            encoding="utf-8",
+        )
     linhas = ENV_FILE.read_text(encoding="utf-8").splitlines()
     achou = False
     novas = []
@@ -199,7 +209,7 @@ def comando_chat_id(salvar=False):
 
 
 def enviar_telegram(texto, dry_run=False):
-    """Envia a mensagem pela Bot API. Retorna True/False. Nao imprime o token."""
+    """Envia a mensagem pela Bot API. Retorna True/False. Não imprime o token."""
     if dry_run:
         print("\n----- DRY-RUN (não enviado) -----")
         print(texto)
@@ -241,7 +251,7 @@ def enviar_telegram(texto, dry_run=False):
 
 
 def alerta_fake():
-    """Alerta de exemplo para testar token, formatacao e celular."""
+    """Alerta de exemplo para testar token, formatação e entrega no celular."""
     return {
         "timestamp": agora_iso(),
         "rule": {
@@ -282,7 +292,7 @@ def processar_linha(linha, filtro, dry_run=False):
     try:
         alert = json.loads(linha)
     except json.JSONDecodeError:
-        return  # linha truncada (rotacao de log) ou lixo: ignora
+        return  # linha truncada (rotação de log) ou lixo: ignora
 
     level = int((alert.get("rule") or {}).get("level", 0) or 0)
     min_level = int(os.getenv("MIN_LEVEL", "10"))
@@ -298,7 +308,7 @@ def processar_linha(linha, filtro, dry_run=False):
 
 
 def stream_arquivo_local(caminho, filtro, dry_run=False, from_start=False):
-    """Le um alerts.json local que ja esta no disco (util p/ testar sem Docker)."""
+    """Lê um alerts.json local que já está no disco (útil para testar sem Docker)."""
     print(f"[*] Lendo arquivo local: {caminho}")
     with open(caminho, "r", encoding="utf-8", errors="ignore") as f:
         if not from_start:
@@ -344,7 +354,7 @@ def stream_docker(container, alerts_path, filtro, dry_run=False):
 
 def comando_setup():
     """Wizard: pede o token, salva, descobre chat_id e manda um teste."""
-    print("=== Configuração do Telegram — Projeto 1 ===\n")
+    print("=== Configuração do Telegram — Purple Honeypot SIEM ===\n")
     print("1) No Telegram, fale com @BotFather -> /newbot (se ainda não fez).")
     print("2) Copie o token que ele devolveu.")
     print("3) Abra o seu bot e mande /start.\n")
@@ -401,7 +411,7 @@ def main():
     configurar_console_utf8()
     carregar_env()
 
-    parser = argparse.ArgumentParser(description="Wazuh -> Telegram (Projeto 1)")
+    parser = argparse.ArgumentParser(description="Dispatcher Wazuh -> Telegram do Purple Honeypot SIEM")
     modo = parser.add_mutually_exclusive_group(required=True)
     modo.add_argument("--setup", action="store_true", help="Wizard: salva token, descobre chat_id e testa")
     modo.add_argument("--test", action="store_true", help="Envia um alerta fake para testar o Telegram")

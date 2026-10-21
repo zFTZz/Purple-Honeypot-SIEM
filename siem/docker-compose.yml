@@ -1,7 +1,7 @@
-# Passo [2] — Wazuh single-node (indexer + manager + dashboard).
-# Sobe com: docker compose -f siem/docker-compose.yml up -d
-# Primeira subida baixa ~2GB e leva minutos. Dashboard em https://localhost (admin/admin).
-# Dica: Wazuh come RAM. Se travar, sobe só indexer+manager primeiro (dashboard depois).
+# Wazuh single-node do Purple Honeypot SIEM (indexer + manager + dashboard).
+# Suba com: docker compose -f siem/docker-compose.yml up -d
+# A primeira subida baixa cerca de 2 GB e pode levar alguns minutos.
+# O Wazuh consome RAM; se necessário, suba primeiro indexer + manager e depois o dashboard.
 services:
   wazuh-indexer:
     image: wazuh/wazuh-indexer:4.7.2
@@ -40,9 +40,9 @@ services:
       - wazuh-manager-etc:/var/ossec/etc
       - wazuh-manager-logs:/var/ossec/logs
       - wazuh-manager-queue:/var/ossec/queue
-      # Regras custom do Projeto 1 (mount 1:1 p/ rules/ ler automatico; subdir NAO e lido)
+      # Regras custom do Purple Honeypot SIEM (montagem 1:1 para o rules/ ler automaticamente; subdiretórios não são lidos)
       - ./custom_rules/bruteforce_custom.xml:/var/ossec/etc/rules/bruteforce_custom.xml:ro
-      # Logs do honeypot (passo [3]: manager lê direto, sem Filebeat no meio)
+      # Logs dos honeypots (o manager lê diretamente, sem Filebeat no meio)
       - ../honeypot/logs:/var/log/honeypot:ro
     ports:
       - "1514:1514"
@@ -61,11 +61,11 @@ services:
       - "INDEXER_USERNAME=admin"
       - "INDEXER_PASSWORD=admin"
       - "WAZUH_API_URL=https://wazuh-manager"
-      # Usuarios padrao do manager neste volume (nao sao os do compose oficial).
+      # Usuários padrão do manager neste volume (não são os do compose oficial).
       - "API_USERNAME=wazuh-wui"
       - "API_PASSWORD=wazuh-wui"
     ports:
-      - "5601:5601"  # 443 e 8443 ocupadas neste host; dashboard em https://localhost:5601
+      - "5601:5601"  # 443 e 8443 já estavam ocupadas no host; dashboard em https://localhost:5601
     depends_on:
       - wazuh-indexer
       - wazuh-manager
