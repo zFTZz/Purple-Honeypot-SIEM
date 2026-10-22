@@ -88,6 +88,7 @@ Provar, ponta a ponta, a capacidade de:
 - Não faz GeoIP real; a regra de “geolocalização” é uma **anomalia de origem** baseada em faixas privadas.
 - Não possui resposta ativa (não bloqueia IP nem isola conexão).
 - Não possui HA, retenção de longo prazo, TLS com certificado público nem RBAC endurecido.
+- Não possui hardening de flood/DoS: os honeypots aceitam conexões ilimitadas — absorção de volume é responsabilidade da borda (firewall/rate-limit). O cooldown do dispatcher protege o canal de notificação (por regra+IP), mas não agrega alertas de muitos IPs distintos.
 
 ---
 
@@ -173,7 +174,7 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 
 ### 4.2 Honeypot HTTP — `honeypot/http_honeypot.py`
 
-- Usa `http.server` na porta 8080.
+- Usa `http.server` com `ThreadingHTTPServer` (uma thread por conexão): um cliente lento que nunca completa a requisição (slowloris) não trava os demais, e cortes abruptos de conexão são engolidos no `handle()` para manter o terminal limpo. A porta pode ser sobreposta com `HONEYPOT_HTTP_PORT` (padrão 8080), útil quando ela está ocupada no host. Medição no §8.7.
 - Responde a `GET` e `POST`.
 - Registra `http.request` com IP, método, path, User-Agent, body (limitado a 2000 caracteres) e flag `suspicious`.
 - Iscas: `/.env`, `/robots.txt`, `/admin`, `/login`, `/.git`, `/config.php`, `/backup`.
@@ -552,6 +553,20 @@ O script foi executado duas vezes no Git Bash:
 
 Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegram (`TELEGRAM_API_BASE`). Isso permitiu testar `--test` e `--follow` sem enviar mensagens reais. Depois, o `--setup` foi usado com o bot real e um teste chegou ao celular.
 
+### 8.7 Honeypot HTTP sob conexões lentas (slowloris)
+
+Motivação: a pergunta “e se chamar em loop malicioso / DoS?” vinda de um colega ao ver o projeto. O objetivo do teste não é absorver DoS — isso é tarefa de firewall/rate-limit na borda — e sim **medir** como o honeypot HTTP se comporta.
+
+Versão original (`HTTPServer` single-thread), medida com conexões presas (requisições incompletas): o servidor **aceitou 6 conexões e recusou a 7ª** (1 thread ocupada + backlog de 5), e a requisição real da prova foi **recusada** (WinError 10061, ~2 s). O “loop malicioso” não só parava a telemetria como derrubava o atendimento.
+
+Mudança aplicada: `ThreadingHTTPServer` (uma thread por conexão), porta sobreponível via `HONEYPOT_HTTP_PORT` e filtro de erros de conexão no `handle()`.
+
+Medição da versão corrigida: **20 conexões presas simultâneas** + uma requisição real em cima → `HTTP 200` em **31–33 ms**, terminal limpo, log JSON íntegro.
+
+Detalhe observado (e tratado): quando o cliente fecha no meio dos headers, o parser do `http.server` recebe EOF e encerra a leitura como “fim dos headers” — o handler ainda tenta responder e falha com `ConnectionAbortedError`. Sem o filtro do `handle()`, flood vira chuva de traceback no console; com ele, terminal limpo e log sem perda de evento.
+
+Escala maior (centenas de conexões, via VM) fica como experimento opcional da sessão de VM. A pergunta “aguenta DoS?” segue em três camadas: borda (firewall/rate-limit), honeypot (absorve e loga) e canal (cooldown do dispatcher).
+
 ---
 
 ## 9. Segurança, riscos e limitações
@@ -581,6 +596,7 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 | Cooldown de 120 s | Pode esconder repetição legítima | Ajustar por criticidade |
 | `ignore=300` na `100103` | Repetições em 5 min são suprimidas | Revisar política de deduplicação |
 | Sem testes automatizados de regressão | Regras podem quebrar em upgrade | Pipeline de testes com `wazuh-logtest` |
+| Honeypots sem cap de conexões (flood) | Degradação sob massa de conexões; o cooldown só agrega por regra+IP | Rate-limit na borda + regra de detecção de flood (roadmap) |
 | Sem retenção de longo prazo | Dificulta investigação histórica | ILM/arquivamento |
 
 ### 9.4 O que eu faria diferente em produção
@@ -639,6 +655,10 @@ Antes do teste real, foi usado um servidor HTTP local simulando a API do Telegra
 ### 10.10 “Quais são os riscos de rodar um honeypot?”
 
 “O honeypot pode ser usado para reconhecimento, abuso de recursos ou como pivô se não estiver isolado. Ele não deve ter credenciais reais, deve ter egress bloqueado, limites de conexão e monitoramento. Também é importante não registrar dados sensíveis desnecessariamente.”
+
+### 10.11 “Seu honeypot aguenta DoS / chamada em loop malicioso?”
+
+“Resposta em três camadas. **Borda:** absorção de flood é problema de firewall/rate-limit; honeypot existe para ser o alvo aberto que registra tudo — volume alto também é telemetria. **Honeypot:** o HTTP usa `ThreadingHTTPServer`; medi 20 conexões slowloris presas enquanto uma requisição real era servida em ~30 ms (§8.7). O SSH cria uma thread por conexão e degrada sob massa. **Canal de alertas:** o dispatcher tem cooldown de 120 s por regra+IP, então flood repetitivo não frita o Telegram; a lacuna honesta é alert storm de muitos IPs distintos. Próximo passo: regra que detecte o próprio flood e cap de conexões na borda.”
 
 ---
 

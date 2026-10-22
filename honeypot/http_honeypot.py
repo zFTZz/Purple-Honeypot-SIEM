@@ -9,12 +9,12 @@ Uso:
     python honeypot/http_honeypot.py
     http://localhost:8080/
 """
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import datetime
 import os
 
-PORT = 8080  # 80 exigiria privilégios administrativos; 8080 roda como usuário comum
+PORT = int(os.environ.get("HONEYPOT_HTTP_PORT", "8080"))  # sobreponha via env quando a porta estiver ocupada ou em testes
 LOG_FILE = os.path.join(os.path.dirname(__file__), "logs", "http.log")
 
 # Caminhos que scanners testam com frequência; acessos a eles são tratados como reconhecimento.
@@ -34,6 +34,19 @@ class Handler(BaseHTTPRequestHandler):
     # Silencia o log padrão do http.server para manter o terminal limpo.
     def log_message(self, *args):
         return
+
+    def handle(self):
+        # Em honeypot é NORMAL o cliente cortar a conexão no meio: scans abortados,
+        # slowloris fechando, rede caindo. Detalhe sutil do http.server: com o
+        # cliente fechado, o parser de headers recebe EOF e sai da análise sem
+        # erro — o do_GET roda mesmo assim e a escrita da resposta falha com
+        # ConnectionAbortedError. Sem este filtro, cada corte imprime um traceback
+        # (com flood vira chuva) — então os erros de conexão são engolidos aqui,
+        # o terminal fica limpo e o log JSON não perde evento.
+        try:
+            super().handle()
+        except (ConnectionError, TimeoutError):
+            self.close_connection = True
 
     def _responder(self, codigo=200, corpo=b"OK", tipo=b"text/plain"):
         self.send_response(codigo)
@@ -89,7 +102,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    servidor = HTTPServer(("0.0.0.0", PORT), Handler)
+    # ThreadingHTTPServer: uma thread por conexão. Um cliente lento que envia uma
+    # requisição incompleta (slowloris) prende apenas a própria thread — os demais
+    # clientes continuam servidos e a telemetria arma no log.
+    servidor = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     print(f"[*] HTTP honeypot em 0.0.0.0:{PORT} -> {LOG_FILE}")
     print(f"[*] teste: http://localhost:{PORT}/  e  http://localhost:{PORT}/.env")
     servidor.serve_forever()

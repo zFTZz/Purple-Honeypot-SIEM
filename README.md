@@ -256,6 +256,7 @@ Purple-Honeypot-SIEM/
 
 - O honeypot SSH aceita qualquer senha a partir da segunda tentativa e registra a senha em texto claro. Isso é intencional para gerar telemetria e **não deve ser usado em produção**.
 - Não exponha as portas 2222, 8080 ou 2121 diretamente à internet sem isolamento de rede, limites de conexão e monitoramento.
+- Flood/DoS é trabalho da borda (firewall/rate-limit), não do honeypot. O que o laboratório tem no caminho do alerta é o cooldown de 120 s por regra+IP no dispatcher (protege o canal de notificação) e o honeypot HTTP multi-thread (`ThreadingHTTPServer` — slowloris não trava os demais); SSH e FTP degradam sob massa de conexões.
 - `alerting/.env` e `honeypot/host.key` são ignorados pelo Git. Nunca faça commit deles.
 - As credenciais e chaves exibidas pelos honeypots são fictícias.
 - Em produção: TLS válido, RBAC, cofre de segredos, GeoIP real, segmentação de rede e retenção definida.
@@ -264,7 +265,7 @@ Purple-Honeypot-SIEM/
 
 **Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom (10 validadas ao vivo e a `100108` validada com eventos injetados no pipeline), dispatcher Wazuh → Telegram com mensagens reais (`100101` e `100104`), dashboard com cinco painéis e setup idempotente.
 
-**Próximos passos:** gravar a demo de 2–3 minutos, adicionar GeoIP real, criar testes automatizados de regressão das regras e evoluir para HA/retenção de longo prazo.
+**Próximos passos:** gravar a demo de 2–3 minutos, adicionar GeoIP real, criar testes automatizados de regressão das regras, adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
 
 ## Documentação
 
