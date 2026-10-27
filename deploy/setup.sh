@@ -89,7 +89,9 @@ echo "[+] Manager OK."
 # start do container; sincronizamos aqui para refletir edições locais sem
 # reiniciar tudo. Se o conteúdo mudou, o manager reinicia para recarregar.
 echo "[*] Sincronizando a regra custom do container..."
-if docker exec wazuh-manager sh -c 'cmp -s /var/ossec/etc/rules/bruteforce_custom.xml -' \
+# O -i é obrigatório: sem ele o docker exec não encaminha o stdin e o cmp
+# compara o arquivo contra EOF vazio → sempre "diferente" → restart à toa.
+if docker exec -i wazuh-manager sh -c 'cmp -s /var/ossec/etc/rules/bruteforce_custom.xml -' \
     < siem/custom_rules/bruteforce_custom.xml 2>/dev/null; then
   echo "[=] regra custom já atualizada."
 else
