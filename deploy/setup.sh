@@ -64,6 +64,27 @@ if ! printf '%s' "$HEALTH" | grep -q '"status"'; then
 fi
 echo "[+] Indexer OK."
 
+# Na primeira subida o manager só popula o volume /var/ossec/etc depois que o
+# indexer fica seguro. Sem essa espera, o tee abaixo pode criar um ossec.conf
+# parcial e fazer o entrypoint pular a cópia dos arquivos padrão
+# (ar.conf, decoders, rules, client.keys) — deixa o manager inutilizável.
+echo "[*] Aguardando o manager popular o volume /var/ossec/etc..."
+MANAGER_READY=0
+for _ in $(seq 1 90); do
+  if docker exec wazuh-manager sh -c 'test -s /var/ossec/etc/ossec.conf' 2>/dev/null && \
+     docker exec wazuh-manager sh -c 'test -f /var/ossec/etc/shared/ar.conf' 2>/dev/null; then
+    MANAGER_READY=1
+    break
+  fi
+  sleep 2
+done
+if [ "$MANAGER_READY" -ne 1 ]; then
+  echo "[!] wazuh-manager não terminou de inicializar (ossec.conf ou ar.conf ausente)."
+  echo "    Veja: docker logs wazuh-manager --tail 50"
+  exit 1
+fi
+echo "[+] Manager OK."
+
 # Adiciona somente os localfiles que ainda não existem no volume do manager.
 adicionar_localfiles() {
   local faltantes=()
