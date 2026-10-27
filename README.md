@@ -220,6 +220,16 @@ docker exec -e OPENSEARCH_JAVA_HOME=/usr/share/wazuh-indexer/jdk wazuh-indexer b
 
 O `setup.sh` executa esse procedimento automaticamente quando necessário.
 
+## Capturas
+
+Dashboard com dados reais da onda de ataques simulada (5 painéis, 30 alertas de honeypot em minutos):
+
+![Dashboard do Purple Honeypot SIEM](docs/img/dashboard.png)
+
+Alertas reais recebidos no Telegram pelo dispatcher (SSH brute-force, comando suspeito, scan HTTP e FTP brute-force):
+
+![Alerta recebido no Telegram](docs/img/telegram-alert.png)
+
 ## Estrutura do repositório
 
 ```text
@@ -249,7 +259,10 @@ Purple-Honeypot-SIEM/
 │   └── setup.sh
 └── docs/
     ├── architecture.md
-    └── RELATORIO.md
+    ├── RELATORIO.md
+    └── img/
+        ├── dashboard.png
+        └── telegram-alert.png
 ```
 
 ## Segurança do laboratório
@@ -263,7 +276,7 @@ Purple-Honeypot-SIEM/
 
 ## Status e roadmap
 
-**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom (10 validadas ao vivo e a `100108` validada com eventos injetados no pipeline), dispatcher Wazuh → Telegram com mensagens reais (`100101` e `100104`), dashboard com cinco painéis e setup idempotente.
+**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo), dashboard com cinco painéis e setup idempotente.
 
 **Próximos passos:** gravar a demo de 2–3 minutos, adicionar GeoIP real, criar testes automatizados de regressão das regras, adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
 
