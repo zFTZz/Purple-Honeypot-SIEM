@@ -149,96 +149,73 @@ def pie_vis():
 
 
 def line_vis():
+    """Painel temporal em TSVB (vis type "metrics"), substituindo o antigo "line".
+
+    No OpenSearch Dashboards 2.8.0 deste laboratorio o renderizador de linha
+    (vislib) falhava em silencio: sem tarja de erro no painel e sem excecao no
+    console do navegador, o grafico simplesmente ficava em branco. O TSVB e o
+    motor de grafico de tempo nativo do Wazuh e foi validado de servidor em
+    /api/metrics/vis/data antes de trocar o objeto salvo.
+
+    O filtro do honeypot tambem fica embutido em model.filter: o TSVB so recebe
+    a KQL do dashboard se o embeddable repassar, e com o filtro no proprio
+    painel o grafico mostra apenas as regras custom mesmo assim.
+    """
     vis = {
+        "type": "metrics",
         "title": LINE_TITLE,
-        "type": "line",
         "params": {
-            "type": "line",
-            "grid": {"categoryLines": False},
-            "categoryAxes": [
+            "id": "honeypot-alertas-tempo",
+            "type": "timeseries",
+            "series": [
                 {
-                    "id": "CategoryAxis-1",
-                    "type": "category",
-                    "position": "bottom",
-                    "show": True,
-                    "style": {},
-                    "scale": {"type": "linear"},
-                    "labels": {"show": True, "filter": True, "truncate": 100},
-                    "title": {},
+                    "id": "alertas",
+                    "label": "Alertas",
+                    "color": "#54B399",
+                    "split_mode": "everything",
+                    "split_color_mode": "opensearchDashboards",
+                    "metrics": [{"id": "count_alertas", "type": "count"}],
+                    "separate_axis": 0,
+                    "axis_position": "right",
+                    "formatter": "number",
+                    "chart_type": "line",
+                    "line_width": 2,
+                    "point_size": 4,
+                    "fill": 0.4,
+                    "stacked": "none",
+                    "type": "normal",
                 }
             ],
-            "valueAxes": [
-                {
-                    "id": "ValueAxis-1",
-                    "name": "LeftAxis-1",
-                    "type": "value",
-                    "position": "left",
-                    "show": True,
-                    "style": {},
-                    "scale": {"type": "linear", "mode": "normal"},
-                    "labels": {"show": True, "rotate": 0, "filter": False, "truncate": 100},
-                    "title": {"text": "Alertas"},
-                }
-            ],
-            "seriesParams": [
-                {
-                    "show": True,
-                    "type": "line",
-                    "mode": "normal",
-                    "dataLabel": "Contagem",
-                    "valueAxis": "ValueAxis-1",
-                    "drawLinesBetweenPoints": True,
-                    "lineWidth": 2,
-                    "showCircles": True,
-                }
-            ],
-            "addTooltip": True,
-            "addLegend": True,
-            "legendPosition": "right",
-            "times": [],
-            "addTimeMarker": False,
+            # Campo real dos alertas do Wazuh: "timestamp" (sem @).
+            "time_field": "timestamp",
+            "index_pattern": INDEX_TITLE,
+            "interval": "auto",
+            "filter": {"language": "kuery", "query": "rule.groups: honeypot"},
+            "annotations": [],
+            "queries": [],
+            "axis_position": "left",
+            "axis_formatter": "number",
+            "axis_scale": "normal",
+            # Legenda desligada de proposito: o plugin do TSVB tem
+            # showLegendExtra:true HARDCODED (nao e campo do model), entao a
+            # legenda sempre imprime o ultimo bucket ao lado do rotulo. Como o
+            # ataque ja terminou, esse ultimo valor e 0 - e "Alertas 0" da a
+            # impressao de painel zerado no print. Com uma unica serie, o
+            # titulo do painel ja identifica o dado.
+            "show_legend": 0,
+            "show_grid": 1,
+            "tooltip_mode": "show_all",
+            "legend_position": "bottom",
+            "drop_last_bucket": 1,
+            "drop_partial_buckets": 0,
         },
-        "aggs": [
-            {"id": "1", "enabled": True, "type": "count", "schema": "metric", "params": {}},
-            {
-                "id": "2",
-                "enabled": True,
-                "type": "date_histogram",
-                "schema": "segment",
-                "params": {
-                    "field": "@timestamp",
-                    "timeRange": {"from": "now-24h", "to": "now"},
-                    "useNormalizedEsInterval": True,
-                    "scaleMetricValues": False,
-                    "interval": "auto",
-                    "drop_partials": False,
-                    "min_doc_count": 1,
-                    "extended_bounds": {},
-                },
-            },
-            {
-                "id": "3",
-                "enabled": True,
-                "type": "terms",
-                "schema": "group",
-                "params": {
-                    "field": "rule.id",
-                    "orderBy": "1",
-                    "order": "desc",
-                    "size": 5,
-                    "otherBucket": False,
-                    "otherBucketLabel": "Outros",
-                    "missingBucket": False,
-                    "missingBucketLabel": "Sem valor",
-                },
-            },
-        ],
+        "aggs": [],
     }
     return {
         "title": LINE_TITLE,
         "visState": json.dumps(vis, ensure_ascii=False),
         "uiStateJSON": "{}",
-        "description": "Volume de alertas ao longo do tempo, separado por regra.",
+        "description": "Volume de alertas do honeypot ao longo do tempo (TSVB).",
         "version": 1,
         "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()},
     }
@@ -342,8 +319,10 @@ def recent_search():
     return {
         "title": SEARCH_TITLE,
         "description": "Últimos alertas com regra, IP, usuário e comando.",
-        "columns": ["@timestamp", "rule.id", "rule.level", "rule.description", "data.srcip", "data.user", "data.command"],
-        "sort": [["@timestamp", "desc"]],
+        # Sem coluna de tempo explicita: a coluna "Time" automatica ja usa o
+        # time field do index pattern (timestamp); duplicar gerava "-" na tela.
+        "columns": ["rule.id", "rule.level", "rule.description", "data.srcip", "data.user", "data.command"],
+        "sort": [["timestamp", "desc"]],
         "version": 1,
         "kibanaSavedObjectMeta": {"searchSourceJSON": search_source()},
     }
@@ -382,8 +361,13 @@ def dashboard_obj(panel_ids):
         "timeRestore": True,
         "timeFrom": "now-24h",
         "timeTo": "now",
+        # Filtro no nivel do dashboard: so alertas do honeypot (regras custom)
+        # em todos os painéis. Sem isso, os alertas de rootcheck (510) e os
+        # avisos internos do OSSEC poluem os gráficos de um dashboard "Honeypot -".
         "kibanaSavedObjectMeta": {
-            "searchSourceJSON": json.dumps({"query": {"query": "", "language": "kuery"}, "filter": []})
+            "searchSourceJSON": json.dumps(
+                {"query": {"query": "rule.groups: honeypot", "language": "kuery"}, "filter": []}
+            )
         },
     }
     return attributes, refs
@@ -410,7 +394,7 @@ def main():
             opener,
             "POST",
             f"{base}/api/saved_objects/index-pattern",
-            {"attributes": {"title": INDEX_TITLE, "timeFieldName": "@timestamp"}},
+            {"attributes": {"title": INDEX_TITLE, "timeFieldName": "timestamp"}},
         )
         index_id = body["id"]
         print(f"[+] index-pattern: {INDEX_TITLE} ({index_id})")
