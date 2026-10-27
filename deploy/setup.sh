@@ -85,6 +85,20 @@ if [ "$MANAGER_READY" -ne 1 ]; then
 fi
 echo "[+] Manager OK."
 
+# A cópia oficial da regra custom (via /wazuh-config-mount) acontece só no
+# start do container; sincronizamos aqui para refletir edições locais sem
+# reiniciar tudo. Se o conteúdo mudou, o manager reinicia para recarregar.
+echo "[*] Sincronizando a regra custom do container..."
+if docker exec wazuh-manager sh -c 'cmp -s /var/ossec/etc/rules/bruteforce_custom.xml -' \
+    < siem/custom_rules/bruteforce_custom.xml 2>/dev/null; then
+  echo "[=] regra custom já atualizada."
+else
+  docker cp siem/custom_rules/bruteforce_custom.xml wazuh-manager:/var/ossec/etc/rules/bruteforce_custom.xml
+  echo "[+] regra custom copiada; reiniciando o manager para carregar."
+  docker exec wazuh-manager sh -c '/var/ossec/bin/wazuh-control restart' >/dev/null 2>&1 || true
+  sleep 8
+fi
+
 # Adiciona somente os localfiles que ainda não existem no volume do manager.
 adicionar_localfiles() {
   local faltantes=()

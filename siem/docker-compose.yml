@@ -40,8 +40,13 @@ services:
       - wazuh-manager-etc:/var/ossec/etc
       - wazuh-manager-logs:/var/ossec/logs
       - wazuh-manager-queue:/var/ossec/queue
-      # Regras custom do Purple Honeypot SIEM (montagem 1:1 para o rules/ ler automaticamente; subdiretórios não são lidos)
-      - ./custom_rules/bruteforce_custom.xml:/var/ossec/etc/rules/bruteforce_custom.xml:ro
+      # Regras custom do Purple Honeypot SIEM.
+      # Montar DENTRO de /var/ossec/etc faria o Docker criar o arquivo-alvo na
+      # bind ANTES do init do Wazuh; o entrypoint acharia o volume "não vazio" e
+      # PULARIA a cópia do /var/ossec/etc inteiro (ossec.conf, ar.conf, decoders)
+      # em um clone limpo. /wazuh-config-mount é o mecanismo oficial: o init
+      # copia para /var/ossec DEPOIS de popular os volumes.
+      - ./custom_rules/bruteforce_custom.xml:/wazuh-config-mount/etc/rules/bruteforce_custom.xml:ro
       # Logs dos honeypots (o manager lê diretamente, sem Filebeat no meio)
       - ../honeypot/logs:/var/log/honeypot:ro
     ports:
