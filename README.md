@@ -273,6 +273,7 @@ Purple-Honeypot-SIEM/
         ├── telegram-alert.png
         ├── dashboard-externo.png
         └── telegram-alert-externo.png
+
 ```
 
 ## Segurança do laboratório
