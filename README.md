@@ -230,6 +230,14 @@ Alertas reais recebidos no Telegram pelo dispatcher (SSH brute-force, comando su
 
 ![Alerta recebido no Telegram](docs/img/telegram-alert.png)
 
+### Ataque de uma máquina externa (IP visível no pipeline)
+
+Uma segunda máquina do laboratório (Kali, `192.168.15.4`) atacou os honeypots remotos — o IP de origem aparece de ponta a ponta: logs, regras, dashboard e Telegram:
+
+![Dashboard com IP externo no Top IPs](docs/img/dashboard-externo.png)
+
+![Alertas do Telegram com origem 192.168.15.4](docs/img/telegram-alert-externo.png)
+
 ## Estrutura do repositório
 
 ```text
