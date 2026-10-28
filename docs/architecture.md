@@ -10,29 +10,29 @@
   Paramiko, handshake SSH real        HTTP com iscas /.env /admin         socket FTP, iscas LIST/RETR
   |                                   |                                   |
   +-------------------------------+---+-----------------------------------+
-                                  v
-                    honeypot/logs/ssh.log, http.log, ftp.log
-                    (um JSON por linha, timestamp UTC)
-                                  |
-                                  v
-                    Wazuh Manager (container)
-                    localfile log_format=json
-                                  |
-                                  +--> analysisd + custom_rules/bruteforce_custom.xml
-                                  |        100100 falha SSH          100105 scanner HTTP
-                                  |        100101 brute-force SSH    100106 isca/traversal
-                                  |        100102 recon SSH          100107 POST
-                                  |        100103 login externo      100108 scan sequencial
-                                  |        100104 sequência SSH      100109/100110 FTP
-                                  |
-                                  +--> /var/ossec/logs/alerts/alerts.json
-                                  |        |
-                                  |        +--> webhook_dispatcher.py --follow
-                                  |                nível >= 10 + cooldown
-                                  |                -> API do Telegram -> celular
-                                  |
-                                  +--> Filebeat (embutido no manager)
-                                           -> Wazuh Indexer (9200) -> Dashboard (5601)
+                                      v
+                          honeypot/logs/ssh.log, http.log, ftp.log
+                          (um JSON por linha, timestamp UTC)
+                                      |
+                                      v
+                          Wazuh Manager (container)
+                          localfile log_format=json
+                                      |
+                                      +--> analysisd + custom_rules/bruteforce_custom.xml
+                                      |        100100 falha SSH          100105 scanner HTTP
+                                      |        100101 brute-force SSH    100106 isca/traversal
+                                      |        100102 recon SSH          100107 POST
+                                      |        100103 login externo      100108 scan sequencial
+                                      |        100104 sequência SSH      100109/100110 FTP
+                                      |
+                                      +--> /var/ossec/logs/alerts/alerts.json
+                                      |        |
+                                      |        +--> webhook_dispatcher.py --follow
+                                      |                nível >= 10 + cooldown
+                                      |                -> API do Telegram -> celular
+                                      |
+                                      +--> Filebeat (embutido no manager)
+                                               -> Wazuh Indexer (9200) -> Dashboard (5601)
 ```
 
 ## Decisões de arquitetura
