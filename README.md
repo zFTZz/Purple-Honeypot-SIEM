@@ -7,7 +7,7 @@
 
 Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três honeypots em Python (SSH, HTTP e FTP) geram eventos JSON, o Wazuh aplica **11 regras de correlação customizadas** e o alerta chega ao Telegram. O Wazuh Dashboard consolida a triagem em cinco painéis.
 
-> **Escopo:** laboratório reproduzível com Docker Compose. Wazuh 4.7.2, testado no Windows com Docker Desktop e Git Bash. Não é uma configuração de produção.
+> **Escopo:** laboratório reproduzível com Docker Compose. Wazuh 4.7.2, testado no Windows (Docker Desktop e Git Bash) e em um clone limpo no Linux. Não é uma configuração de produção.
 
 ## O que este projeto entrega
 
@@ -232,7 +232,7 @@ Alertas reais recebidos no Telegram pelo dispatcher (SSH brute-force, comando su
 
 ### Ataque de uma máquina externa (IP visível no pipeline)
 
-Uma segunda máquina do laboratório (Kali, `192.168.15.4`) atacou os honeypots remotos — o IP de origem aparece de ponta a ponta: logs, regras, dashboard e Telegram:
+Uma segunda máquina do laboratório (Kali, `192.168.15.4`) atacou os honeypots remotos e o IP de origem aparece nos logs, nas regras, no dashboard e no Telegram:
 
 ![Dashboard com IP externo no Top IPs](docs/img/dashboard-externo.png)
 
@@ -270,23 +270,25 @@ Purple-Honeypot-SIEM/
     ├── RELATORIO.md
     └── img/
         ├── dashboard.png
-        └── telegram-alert.png
+        ├── telegram-alert.png
+        ├── dashboard-externo.png
+        └── telegram-alert-externo.png
 ```
 
 ## Segurança do laboratório
 
 - O honeypot SSH aceita qualquer senha a partir da segunda tentativa e registra a senha em texto claro. Isso é intencional para gerar telemetria e **não deve ser usado em produção**.
 - Não exponha as portas 2222, 8080 ou 2121 diretamente à internet sem isolamento de rede, limites de conexão e monitoramento.
-- Flood/DoS é trabalho da borda (firewall/rate-limit), não do honeypot. O que o laboratório tem no caminho do alerta é o cooldown de 120 s por regra+IP no dispatcher (protege o canal de notificação) e o honeypot HTTP multi-thread (`ThreadingHTTPServer` — slowloris não trava os demais); SSH e FTP degradam sob massa de conexões.
+- Flood/DoS é trabalho da borda (firewall/rate-limit), não do honeypot. No laboratório, o que protege o canal de notificação é o cooldown de 120 s por regra+IP no dispatcher, e o honeypot HTTP é multi-thread (`ThreadingHTTPServer`), então o slowloris não trava os demais; SSH e FTP degradam sob massa de conexões.
 - `alerting/.env` e `honeypot/host.key` são ignorados pelo Git. Nunca faça commit deles.
 - As credenciais e chaves exibidas pelos honeypots são fictícias.
 - Em produção: TLS válido, RBAC, cofre de segredos, GeoIP real, segmentação de rede e retenção definida.
 
 ## Status e roadmap
 
-**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo), dashboard com cinco painéis e setup idempotente.
+**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo, inclusive de um IP externo), dashboard com cinco painéis e setup idempotente.
 
-**Próximos passos:** gravar a demo de 2–3 minutos, adicionar GeoIP real, criar testes automatizados de regressão das regras, adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
+**Próximos passos:** adicionar GeoIP real, criar testes automatizados de regressão das regras, adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
 
 ## Documentação
 
