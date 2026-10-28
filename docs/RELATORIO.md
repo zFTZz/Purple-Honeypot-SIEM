@@ -2,8 +2,8 @@
 
 **Projeto:** Purple Honeypot SIEM\
 **Autor:** Luiz Felipe — Segurança da Informação | Blue Team\
-**Data:** 21/10/2026 (horário local; os logs do laboratório usam UTC)\
-**Status:** MVP funcional de laboratório. Demo e endurecimento para produção no roadmap.\
+**Data:** 21/10/2026, atualizado em 28/10/2026 (horário local; os logs do laboratório usam UTC)\
+**Status:** MVP funcional de laboratório, validado em Windows e em clone limpo no Linux. Endurecimento para produção no roadmap.\
 **Repositório:** https://github.com/zFTZz/Purple-Honeypot-SIEM\
 **Stack principal:** Python, Paramiko, Docker Compose, Wazuh 4.7.2, Wazuh Indexer, Wazuh Dashboard/OpenSearch Dashboards, Filebeat, Telegram Bot API.
 
@@ -33,7 +33,7 @@
 
 O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visualização** para um honeypot de laboratório:
 
-1. Um atacante — ou o simulador `honeypot/simulate_attack.py` — conecta no honeypot SSH (`localhost:2222`), HTTP (`localhost:8080`) ou FTP (`localhost:2121`).
+1. Um atacante (ou o simulador `honeypot/simulate_attack.py`) conecta no honeypot SSH (`localhost:2222`), HTTP (`localhost:8080`) ou FTP (`localhost:2121`).
 2. O honeypot grava um evento JSON por linha em `honeypot/logs/ssh.log`, `http.log` ou `ftp.log`, com IP, usuário, senha/comando e timestamp UTC.
 3. O Wazuh Manager lê esses arquivos via `localfile` com `log_format=json`.
 4. Onze regras customizadas detectam falha isolada, brute-force, reconhecimento, login externo, sequência falha → reconhecimento, scanner HTTP, caminho sensível, POST, scan sequencial e brute-force FTP.
@@ -41,7 +41,7 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 6. O dispatcher lê esse arquivo via `docker exec`, filtra nível ≥ 10, aplica cooldown e envia uma mensagem HTML para o Telegram.
 7. O Filebeat **embutido no container do manager** envia os alertas ao Wazuh Indexer; o Wazuh Dashboard mostra cinco painéis: alertas por regra, timeline, top IPs, comandos executados e alertas recentes.
 
-**Evidência mais importante:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`.
+**Evidência:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`. Em 28/10, uma segunda máquina do laboratório (Kali, `192.168.15.4`) atacou os honeypots do host e as quatro regras de nível ≥ 10 (`100101`, `100104`, `100108`, `100110`) dispararam com o IP de origem visível do log ao Telegram (§8.8).
 
 **Resumo do projeto:** “Honeypot SSH/HTTP/FTP que gera telemetria JSON; o Wazuh correlaciona os eventos com onze regras customizadas e o alerta chega ao Telegram, com um dashboard para triagem.”
 
@@ -51,7 +51,7 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 
 ### 2.1 Objetivo
 
-Provar, ponta a ponta, a capacidade de:
+Provar de ponta a ponta a capacidade de:
 
 - **coletar** telemetria de um alvo falso;
 - **detectar** comportamento suspeito com regras próprias, sem depender só do ruleset padrão;
@@ -79,7 +79,7 @@ Provar, ponta a ponta, a capacidade de:
 | Dashboard com top atacantes, timeline e comandos | 5 painéis no Wazuh Dashboard | ✅ |
 | Alerta Telegram/Teams | Telegram real; `teams_alert.ps1` como fallback | ✅ |
 | `setup.sh` | Script idempotente de subida, segurança, localfile e dashboard | ✅ |
-| Vídeo de 2–3 min | Gravação e publicação pendentes | ⏳ |
+| Vídeo de 2–3 min | Dispensado por decisão: prints e README documentam o fluxo | ➖ |
 
 ### 2.3 O que este projeto não é
 
@@ -197,7 +197,7 @@ O arquivo `siem/filebeat.yml` existe como **referência documental** do que o Fi
 - Abre seis conexões e erra a senha em cada uma para gerar seis `ssh.login_failed`.
 - Depois abre uma conexão, erra a primeira senha e acerta a segunda, gerando `ssh.login`.
 - Executa um comando de reconhecimento (padrão `whoami`), gerando `ssh.command`.
-- É útil para o vídeo e para testes reproduzíveis, sem digitar senha seis vezes na mão.
+- É útil para reproduzir o cenário de ataque e para testes repetíveis, sem digitar senha seis vezes na mão.
 - Aceita `--host`, `--port`, `--user`, `--attempts`, `--command` e `--delay`.
 
 ### 4.5 Wazuh — `siem/docker-compose.yml`
@@ -403,6 +403,7 @@ O `logcollector` pode agrupar linhas em lote. Em alguns testes, a 5ª falha era 
 | 15 | `setup.sh` não detectava dashboard 200 | `curl` do Windows retornava `200\r` | `tr -d '\r'` | Normalizar saída de comandos nativos |
 | 16 | `100102` não aparecia quando havia falha | `100104` é mais específica e dispara antes | Esperado; testar `100102` sem falha anterior | Uma regra por evento |
 | 17 | Processos de teste ficavam órfãos | Dispatcher/honeypot em background | Encerrar por PID e documentar comandos | Limpar ambiente após testes |
+| 18 | Em um clone limpo, o manager subia sem `ossec.conf` nem as regras custom | Bind direto em `/var/ossec/etc/...` faz o Docker criar o arquivo-alvo no volume antes do init; o entrypoint acha o volume “não vazio” e **pula a cópia da configuração inteira** | Montar em `/wazuh-config-mount/etc/...` (mecanismo oficial: o init copia depois de popular os volumes) | Um bind que funciona na sua máquina pode quebrar exatamente a instalação limpa de quem clona o repo |
 
 ### 7.2 Estudo de caso: por que a `100101` não disparava ao vivo
 
@@ -567,6 +568,18 @@ Detalhe observado (e tratado): quando o cliente fecha no meio dos headers, o par
 
 Escala maior (centenas de conexões, via VM) fica como experimento opcional da sessão de VM. A pergunta “aguenta DoS?” segue em três camadas: borda (firewall/rate-limit), honeypot (absorve e loga) e canal (cooldown do dispatcher).
 
+### 8.8 Ataque de uma segunda máquina (IP externo visível)
+
+Todos os testes anteriores vieram do próprio host (`127.0.0.1`), o que esconde metade do pipeline: se o `src_ip` é sempre o loopback, nada prova que o IP de origem chega inteiro do log ao alerta. Para fechar isso, uma segunda máquina do laboratório (Kali Linux, `192.168.15.4`) atacou os honeypots do host (`192.168.15.9`) pela rede local, com a porta liberada por regra de firewall dedicada.
+
+Resultado:
+
+- As quatro regras de nível ≥ 10 (`100101`, `100104`, `100108`, `100110`) dispararam com o IP de origem real e **as quatro mensagens chegaram ao Telegram com o campo `Origem: 192.168.15.4`**.
+- No indexer, o mesmo IP aparece com **31 eventos** e é o **2º da lista de top IPs**, logo atrás do `127.0.0.1` — confirmação de que honeypot, log, `localfile`, indexer e dashboard trabalham juntos quando o tráfego não vem do loopback.
+- Capturas do dashboard e do alerta do Telegram com esse IP estão no `README.md` (seção “Ataque de uma máquina externa”).
+
+A `100103` continua sendo a exceção documentada: ela exige um IP de origem de verdade (público) para diferenciar “login ok vindo de fora” de tráfego de laboratório. Evidência de laboratório com IP privado continua não conseguindo provar esse caminho — a limitação está registrada em §9.3 e no README.
+
 ---
 
 ## 9. Segurança, riscos e limitações
@@ -683,12 +696,14 @@ Escala maior (centenas de conexões, via VM) fica como experimento opcional da s
 
 ### Pendente
 
-- [ ] Gravar o vídeo de 2–3 min usando `simulate_attack.py`.
 - [ ] Testar a `100108` ao vivo com 10+ acessos reais (foi validada via eventos injetados no pipeline).
-- [ ] Adicionar as capturas do dashboard e do Telegram ao README.
 - [ ] Integrar GeoIP real.
 - [ ] Endurecer credenciais/TLS/RBAC.
 - [ ] Criar testes automatizados de regressão das regras.
+
+### Dispensado conscientemente
+
+- Vídeo de demonstração: prints + README (com capturas e `setup.sh` de um comando) documentam o fluxo. Um amador falando por cima do terminal atrapalharia a leitura; a decisão e a justificativa estão no `README.md` (roadmap) e no post de divulgação.
 
 ---
 
