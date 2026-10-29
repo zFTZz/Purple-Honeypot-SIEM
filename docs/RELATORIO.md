@@ -856,22 +856,16 @@ Purple-Honeypot-SIEM/
 │   ├── http_honeypot.py
 │   ├── ftp_honeypot.py
 │   ├── simulate_attack.py
-│   ├── host.key              # local, não versionado
-│   └── logs/                 # local, não versionado
-│       ├── ssh.log
-│       ├── http.log
-│       └── ftp.log
+│   └── logs/                  # ignorado pelo git
 ├── siem/
 │   ├── docker-compose.yml
-│   ├── filebeat.yml           # referência documental
+│   ├── custom_rules/bruteforce_custom.xml
 │   ├── create_dashboard.py
-│   ├── OSSEC-MANUAL-CHANGES.md
-│   └── custom_rules/
-│       └── bruteforce_custom.xml
+│   ├── filebeat.yml
+│   └── OSSEC-MANUAL-CHANGES.md
 ├── alerting/
 │   ├── webhook_dispatcher.py
 │   ├── .env.example
-│   ├── .env                   # local, gitignored
 │   └── teams_alert.ps1
 ├── deploy/
 │   └── setup.sh
@@ -880,15 +874,20 @@ Purple-Honeypot-SIEM/
 │   ├── test_rules.py
 │   ├── test_honeypots.py
 │   └── test_dispatcher.py
-├── .github/workflows/
-│   └── tests.yml
-├── docs/
-│   ├── architecture.md
-│   └── RELATORIO.md
+├── .github/workflows/tests.yml
+└── docs/
+    ├── architecture.md
+    ├── RELATORIO.md
+    └── img/
+        ├── dashboard.png
+        ├── telegram-alert.png
+        ├── dashboard-externo.png
+        └── telegram-alert-externo.png
 ├── requirements-dev.txt
 ├── pytest.ini
 ├── .gitattributes
 └── .gitignore
+
 ```
 
 ### 13.2 Commits relevantes
