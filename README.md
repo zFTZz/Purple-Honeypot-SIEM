@@ -295,7 +295,7 @@ Purple-Honeypot-SIEM/
 
 ## Status e roadmap
 
-**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo, inclusive de um IP externo), dashboard com cinco painéis, setup idempotente e suíte de testes automatizados.
+**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom validadas ao vivo (incluindo `100108` em 27/10 e 28/10), dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo, inclusive de um IP externo), dashboard com cinco painéis, setup idempotente e suíte de testes automatizados.
 
 **Testes:** 57 testes automatizados de regressão (regras, honeypots e dispatcher) rodando em CI a cada push e pull request.
 

@@ -81,7 +81,7 @@ Provar de ponta a ponta a capacidade de:
 | Dashboard com top atacantes, timeline e comandos | 5 painéis no Wazuh Dashboard | ✅ |
 | Alerta Telegram/Teams | Telegram real; `teams_alert.ps1` como fallback | ✅ |
 | `setup.sh` | Script idempotente de subida, segurança, localfile e dashboard | ✅ |
-| Vídeo de 2–3 min | Dispensado por decisão: prints e README documentam o fluxo | ➖ |
+| Vídeo de 2–3 min | Dispensado — prints + README + `setup.sh` documentam o fluxo | ✅ |
 
 ### 2.3 O que este projeto não é
 
