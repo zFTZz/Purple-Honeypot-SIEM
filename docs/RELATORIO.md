@@ -2,8 +2,8 @@
 
 **Projeto:** Purple Honeypot SIEM\
 **Autor:** Luiz Felipe — Segurança da Informação | Blue Team\
-**Data:** 21/10/2026, atualizado em 28/10/2026 (horário local; os logs do laboratório usam UTC)\
-**Status:** MVP funcional de laboratório, validado em Windows e em clone limpo no Linux. Endurecimento para produção no roadmap.\
+**Data:** 21/10/2026, atualizado em 29/10/2026 (horário local; os logs do laboratório usam UTC)\
+**Status:** MVP funcional de laboratório, validado em Windows e em clone limpo no Linux, com suíte de testes automatizados em CI. Endurecimento para produção no roadmap.\
 **Repositório:** https://github.com/zFTZz/Purple-Honeypot-SIEM\
 **Stack principal:** Python, Paramiko, Docker Compose, Wazuh 4.7.2, Wazuh Indexer, Wazuh Dashboard/OpenSearch Dashboards, Filebeat, Telegram Bot API.
 
@@ -44,6 +44,8 @@ O projeto entrega um pipeline funcional de **coleta, detecção, alerta e visual
 **Evidência:** em teste real, seis falhas de senha seguidas de um comando `whoami` geraram os alertas `100101` (nível 10) e `100104` (nível 12), e as duas mensagens chegaram ao Telegram. O dashboard foi criado via API e responde em `https://localhost:5601`. Em 28/10, uma segunda máquina do laboratório (Kali, `192.168.15.4`) atacou os honeypots do host e as quatro regras de nível ≥ 10 (`100101`, `100104`, `100108`, `100110`) dispararam com o IP de origem visível do log ao Telegram (§8.8).
 
 **Resumo do projeto:** “Honeypot SSH/HTTP/FTP que gera telemetria JSON; o Wazuh correlaciona os eventos com onze regras customizadas e o alerta chega ao Telegram, com um dashboard para triagem.”
+
+**Testes:** 57 testes automatizados (`pytest`, §8.9) cobrem o contrato das regras, a telemetria dos três honeypots e a lógica do dispatcher, rodando em CI a cada push e pull request. Eles não substituem a validação no `analysisd`, que segue manual.
 
 ---
 
@@ -262,6 +264,15 @@ Onze regras na faixa `100100+`, sem sobrescrever regras nativas do Wazuh. Detalh
 ### 4.10 Fallback Teams — `alerting/teams_alert.ps1`
 
 Script PowerShell opcional para enviar alerta a um webhook do Teams. O Telegram foi escolhido para o MVP por ser mais simples de testar no celular; o Teams fica como alternativa corporativa.
+
+### 4.11 Testes — `tests/`
+
+- Suíte `pytest` que roda **sem Docker e sem Wazuh**: os honeypots sobem em portas efêmeras e o dispatcher roda em `--dry-run`, então nada é enviado ao Telegram e `honeypot/logs/` não é tocado.
+- `tests/test_rules.py`: contrato do XML (11 IDs únicos na faixa custom, níveis e thresholds iguais aos documentados), convenção de `pcre2` ancorado, correlações apontando para SIDs existentes, **uma única regra de `frequency` por SID base** (o bug do §7.2) e as regexes contra entradas positivas e negativas.
+- `tests/test_honeypots.py`: SSH, HTTP e FTP reais, validando o schema consumido pelas regras (`type`, alias `srcip`, timestamp UTC com `Z`), a primeira senha sempre falhando, `PWD`/`LIST`/`RETR`/comando desconhecido, iscas HTTP e o corte do corpo em 2000 caracteres.
+- `tests/test_dispatcher.py`: filtro de nível, cooldown com expiração, escape de HTML, tolerância a linhas truncadas e um replay de `alerts.json` pela CLI em `--dry-run`.
+- CI em `.github/workflows/tests.yml` (Python 3.10 e 3.12).
+- A suíte foi verificada por mutação: reintroduzir `frequency` na `100104` ou desancorar o `type` da `100103` faz os testes falharem nos casos correspondentes.
 
 ---
 
@@ -492,7 +503,7 @@ Depois disso, o cluster ficou `green` e o login `admin/admin` funcionou.
 | Coordenação | falha + comando com `100104` ativa | `100101` continua funcionando | ✅ após remover frequency |
 | Scanner HTTP | GET `/.env` com UA `sqlmap/1.7.2` | `100105` nível 8 | ✅ |
 | Isca HTTP | GET em `/.env`, `/admin`, `/.git/config` | `100106` nível 8 | ✅ (1 alerta: UA de scanner disputa o evento) |
-| Scan HTTP | 10+ acessos a caminhos sensíveis do mesmo IP | `100108` nível 10 | ✅ via eventos injetados; teste ao vivo pendente |
+| Scan HTTP | 10+ acessos a caminhos sensíveis do mesmo IP | `100108` nível 10 | ✅ ao vivo no ataque externo (§8.8); antes validada com eventos injetados |
 | Brute-force FTP | 6 falhas do mesmo IP | `100109` x5 + `100110` nível 10 | ✅ |
 
 Teste HTTP/FTP executado escrevendo eventos JSON diretamente nos logs
@@ -580,6 +591,30 @@ Resultado:
 
 A `100103` continua sendo a exceção documentada: ela exige um IP de origem de verdade (público) para diferenciar “login ok vindo de fora” de tráfego de laboratório. Evidência de laboratório com IP privado continua não conseguindo provar esse caminho — a limitação está registrada em §9.3 e no README.
 
+### 8.9 Testes automatizados
+
+Até aqui, toda validação deste relatório foi manual, com o pipeline real. A lacuna era objetiva: **um upgrade do Wazuh ou uma edição de regra podia quebrar o comportamento sem ninguém perceber até o próximo ataque**. A suíte em `tests/` fecha a parte que não depende do `analysisd`.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+Resultado: **57 testes em ~4 s**, sem Docker e sem Wazuh. O que cada arquivo garante:
+
+| Arquivo | Cobre |
+|---|---|
+| `tests/test_rules.py` | Contrato do XML: 11 IDs únicos na faixa custom (sem sobrescrever o ruleset nativo), níveis e thresholds iguais aos documentados, `pcre2` ancorado nos campos de texto exato, correlações apontando para SIDs existentes, **uma única regra de `frequency` por SID base** (o bug do §7.2) e as regexes contra entradas positivas e negativas (UAs de scanner, iscas HTTP, comandos de recon, faixas privadas da `100103`). |
+| `tests/test_honeypots.py` | SSH, HTTP e FTP sobem de verdade em portas efêmeras e cada evento é validado no log: `type`, alias `srcip`, timestamp UTC com `Z`, primeira senha sempre falhando por conexão, `PWD`/`LIST`/`RETR`/comando desconhecido, iscas HTTP, POST sempre suspeito e corte do corpo em 2000 caracteres. |
+| `tests/test_dispatcher.py` | Filtro de nível, cooldown por regra+IP (inclusive expiração), escape de HTML, tolerância a linhas truncadas do `alerts.json` e um replay real da CLI com `--file --from-start --exit-on-eof --dry-run`. |
+
+Para não entregar uma suíte que passa por acidente, os dois bugs históricos foram **reintroduzidos de propósito** e a suíte falhou nos casos certos:
+
+- devolver `frequency="2"` para a `100104` → falham `test_uma_unica_regra_de_frequency_por_sid_base` e `test_100104_sem_frequency_com_a_sequencia_correta`;
+- remover as âncoras `^...$` do `type` da `100103` → falham o teste de ancoragem e o teste que garante que `ssh.login` não casa `ssh.login_failed`.
+
+**Limite honesto da cobertura:** nenhum teste aqui executa o `analysisd`. Batching do logcollector, disputa entre regras de correlação e atribuição de um evento a uma única regra continuam exigindo o pipeline real (`wazuh-logtest` e `alerts.json` do manager). Levar esse cenário para o CI é o próximo passo registrado no §11.
+
 ---
 
 ## 9. Segurança, riscos e limitações
@@ -608,7 +643,7 @@ A `100103` continua sendo a exceção documentada: ela exige um IP de origem de 
 | Dispatcher depende de Docker/tail | Pode perder eventos se o container reiniciar | Integração nativa/SOAR |
 | Cooldown de 120 s | Pode esconder repetição legítima | Ajustar por criticidade |
 | `ignore=300` na `100103` | Repetições em 5 min são suprimidas | Revisar política de deduplicação |
-| Sem testes automatizados de regressão | Regras podem quebrar em upgrade | Pipeline de testes com `wazuh-logtest` |
+| A suíte não executa o `analysisd` | Correlação em runtime (batching, disputa entre regras) só é validada manualmente | Rodar `wazuh-logtest` em um job de CI com Docker (§8.9) |
 | Honeypots sem cap de conexões (flood) | Degradação sob massa de conexões; o cooldown só agrega por regra+IP | Rate-limit na borda + regra de detecção de flood (roadmap) |
 | Sem retenção de longo prazo | Dificulta investigação histórica | ILM/arquivamento |
 
@@ -620,7 +655,7 @@ A `100103` continua sendo a exceção documentada: ela exige um IP de origem de 
 4. Implementar resposta ativa e playbooks de contenção.
 5. Trocar credenciais padrão, usar TLS válido e RBAC.
 6. Rodar o dispatcher como serviço/sidecar, com retry e dead-letter queue.
-7. Adicionar testes automatizados de regras e um pipeline CI.
+7. Levar o `wazuh-logtest` para o CI: a suíte atual cobre XML, regexes, honeypots e dispatcher, mas não a decisão do `analysisd` em runtime.
 8. Integrar com SOAR/TheHive/Shuffle para resposta.
 9. Monitorar o próprio honeypot e o Wazuh.
 10. Documentar runbooks de triagem e resposta.
@@ -693,10 +728,12 @@ A `100103` continua sendo a exceção documentada: ela exige um IP de origem de 
 - [x] `setup.sh` idempotente, incluindo os três `localfile`.
 - [x] Documentação de arquitetura e regras.
 - [x] Repositório público no GitHub (`zFTZz/Purple-Honeypot-SIEM`).
+- [x] Testar a `100108` ao vivo com 10+ acessos reais — disparou no ataque externo (§8.8).
+- [x] Testes automatizados de regressão (57 testes) e CI em `.github/workflows/tests.yml` (§8.9).
 
 ### Pendente
 
-- [ ] Testar a `100108` ao vivo com 10+ acessos reais (foi validada via eventos injetados no pipeline).
+- [ ] Cobrir a correlação do `analysisd` no CI com `wazuh-logtest` (a suíte atual valida XML, regexes e telemetria, não a decisão em runtime).
 - [ ] Integrar GeoIP real.
 - [ ] Endurecer credenciais/TLS/RBAC.
 - [ ] Criar testes automatizados de regressão das regras.
@@ -748,7 +785,16 @@ docker cp wazuh-manager:/var/ossec/logs/alerts/alerts.json ./alerts.json
 python alerting/webhook_dispatcher.py --file ./alerts.json --from-start --exit-on-eof --dry-run
 ```
 
-### 12.3 Rodar o honeypot e o dispatcher
+### 12.3 Rodar os testes automatizados
+
+Não precisam de Docker nem do Wazuh:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+### 12.4 Rodar o honeypot e o dispatcher
 
 No terminal do honeypot:
 
@@ -770,7 +816,7 @@ python honeypot/simulate_attack.py
 
 Para sair de uma sessão SSH manual, use `~.`. No PowerShell, `Ctrl+C` não encerra a sessão SSH da mesma forma.
 
-### 12.4 Abrir o dashboard
+### 12.5 Abrir o dashboard
 
 ```text
 https://localhost:5601
@@ -780,7 +826,7 @@ Login de laboratório: `admin` / `admin`.
 
 Dashboard: **Dashboards → Purple Honeypot SIEM**.
 
-### 12.5 Conferir alertas
+### 12.6 Conferir alertas
 
 ```powershell
 docker exec wazuh-manager tail -20 /var/ossec/logs/alerts/alerts.json
@@ -788,7 +834,7 @@ docker exec wazuh-manager tail -20 /var/ossec/logs/alerts/alerts.json
 
 Ou, no dashboard, use os painéis de timeline e alertas recentes.
 
-### 12.6 Recriar o dashboard via script
+### 12.7 Recriar o dashboard via script
 
 ```powershell
 python siem/create_dashboard.py
@@ -829,9 +875,18 @@ Purple-Honeypot-SIEM/
 │   └── teams_alert.ps1
 ├── deploy/
 │   └── setup.sh
+├── tests/
+│   ├── conftest.py
+│   ├── test_rules.py
+│   ├── test_honeypots.py
+│   └── test_dispatcher.py
+├── .github/workflows/
+│   └── tests.yml
 ├── docs/
 │   ├── architecture.md
 │   └── RELATORIO.md
+├── requirements-dev.txt
+├── pytest.ini
 ├── .gitattributes
 └── .gitignore
 ```

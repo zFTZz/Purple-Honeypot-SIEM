@@ -4,3 +4,5 @@ alerting/.env
 /alerts.json
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/

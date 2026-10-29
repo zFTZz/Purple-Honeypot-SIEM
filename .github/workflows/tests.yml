@@ -1,0 +1,30 @@
+name: testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Instalar dependências
+        run: python -m pip install --upgrade pip -r requirements-dev.txt
+
+      # Os testes sobem os honeypots em portas efêmeras e usam dry-run no
+      # dispatcher: não precisam de Docker nem do Wazuh.
+      - name: Rodar a suíte
+        run: python -m pytest -q

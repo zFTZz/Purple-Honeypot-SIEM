@@ -245,6 +245,8 @@ Purple-Honeypot-SIEM/
 ├── README.md
 ├── LICENSE
 ├── requirements.txt
+├── requirements-dev.txt
+├── pytest.ini
 ├── .gitattributes
 ├── .gitignore
 ├── honeypot/
@@ -265,6 +267,12 @@ Purple-Honeypot-SIEM/
 │   └── teams_alert.ps1
 ├── deploy/
 │   └── setup.sh
+├── tests/
+│   ├── conftest.py
+│   ├── test_rules.py
+│   ├── test_honeypots.py
+│   └── test_dispatcher.py
+├── .github/workflows/tests.yml
 └── docs/
     ├── architecture.md
     ├── RELATORIO.md
@@ -287,9 +295,28 @@ Purple-Honeypot-SIEM/
 
 ## Status e roadmap
 
-**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo, inclusive de um IP externo), dashboard com cinco painéis e setup idempotente.
+**Implementado e validado:** três honeypots, ingestão JSON, 11 regras custom, dispatcher Wazuh → Telegram com mensagens reais (`100101`, `100104`, `100108` e `100110` disparadas ao vivo, inclusive de um IP externo), dashboard com cinco painéis, setup idempotente e suíte de testes automatizados.
 
-**Próximos passos:** adicionar GeoIP real, criar testes automatizados de regressão das regras, adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
+**Testes:** 57 testes automatizados de regressão (regras, honeypots e dispatcher) rodando em CI a cada push e pull request.
+
+**Próximos passos:** adicionar GeoIP real, levar o `wazuh-logtest` para o CI (a correlação do `analysisd` não é coberta pelo pytest), adicionar detecção de flood (rate-limit na borda e regra dedicada) e evoluir para HA/retenção de longo prazo.
+
+## Testes
+
+Suíte em `tests/`, sem Docker e sem Wazuh: os honeypots sobem em portas efêmeras e o dispatcher roda em `--dry-run`, então nada é enviado ao Telegram e `honeypot/logs/` não é tocado.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest
+```
+
+O que a suíte cobre:
+
+- **Regras** — contrato do XML (11 IDs únicos na faixa custom, níveis e thresholds iguais aos documentados), convenção de `pcre2` ancorado, correlações apontando para SIDs existentes e a invariante de **uma única regra de `frequency` por SID base** (o bug do §7.2 do relatório). As regexes são testadas contra entradas positivas e negativas (User-Agents de scanner, iscas HTTP, comandos de recon, faixas privadas da `100103`).
+- **Honeypots** — SSH, HTTP e FTP sobem de verdade e cada evento é validado no log: `type`, alias `srcip`, timestamp UTC com `Z`, primeira senha sempre falhando, `PWD`/`LIST`/`RETR`/comando desconhecido, iscas HTTP, `POST` sempre suspeito e corte do corpo em 2000 caracteres.
+- **Dispatcher** — filtro de nível, cooldown por regra+IP (incluindo expiração), escape de HTML, tolerância a linhas truncadas e um replay real de `alerts.json` pela CLI em `--dry-run`.
+
+O que **não** é coberto: a decisão do `analysisd` em runtime (batching do logcollector e disputa entre regras de correlação). Isso continua sendo validado no pipeline real com `wazuh-logtest` e com o `alerts.json` — o relatório (§8.1 e §7.2) documenta o procedimento.
 
 ## Documentação
 
