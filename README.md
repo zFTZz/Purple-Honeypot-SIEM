@@ -5,9 +5,11 @@
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três honeypots em Python (SSH, HTTP e FTP) geram eventos JSON, o Wazuh aplica **11 regras de correlação customizadas** e o alerta chega ao Telegram. O Wazuh Dashboard consolida a triagem em cinco painéis.
+Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três honeypots em Python (SSH, HTTP e FTP) geram eventos JSON, o Wazuh aplica **11 regras de correlação customizadas** e o alerta pode chegar ao Telegram (opcional). O Wazuh Dashboard consolida a triagem em cinco painéis.
 
 > **Escopo:** laboratório reproduzível com Docker Compose. Wazuh 4.7.2, testado no Windows (Docker Desktop e Git Bash) e em um clone limpo no Linux. Não é uma configuração de produção.
+
+> **Telegram é opcional:** o projeto sobe, detecta e é testável sem bot, sem token e sem enviar mensagem. A seção [Testando sem Telegram](#2-testando-sem-telegram) mostra o caminho com `--dry-run`. Para receber alertas reais, crie o seu próprio bot no @BotFather e preencha o `alerting/.env` local — nunca faça commit desse arquivo.
 
 ## O que este projeto entrega
 
@@ -16,7 +18,7 @@ Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três h
 - **Honeypot FTP** com banner, autenticação simulada, `LIST` e `RETR` de arquivo fictício.
 - **Ingestão estruturada** dos três logs JSON no Wazuh via `localfile`, com timestamp UTC.
 - **Detecção própria**: brute-force SSH/FTP, reconhecimento SSH, sequência falha → reconhecimento, login externo, scanner HTTP, acesso a caminho sensível, POST suspeito e varredura sequencial.
-- **Alertas no Telegram** com filtro de severidade, cooldown e ação sugerida.
+- **Alertas no Telegram (opcional)** com filtro de severidade, cooldown e ação sugerida.
 - **Dashboard como código**: index pattern e cinco painéis criados/atualizados por script.
 - **Setup idempotente** para subir a stack, inicializar a segurança do indexer e configurar a ingestão.
 
@@ -52,7 +54,7 @@ Atacante / scanner / simulador
         nível >= 10 + cooldown 120 s                                  |
                     |                                                   v
                     v                                      Wazuh Dashboard :5601
-              Telegram (celular)                          5 painéis do honeypot
+              Telegram (celular, opcional)                5 painéis do honeypot
 ```
 
 ### Onde entra o Filebeat
@@ -117,7 +119,7 @@ python alerting/webhook_dispatcher.py --file ./alerts.json --from-start --exit-o
 
 Para integrar com um endpoint compatível ou um mock local, defina `TELEGRAM_API_BASE` (padrão: `https://api.telegram.org`). Os comandos acima permitem validar o fluxo sem bot.
 
-### 3. Configurar o Telegram
+### 3. Configurar o Telegram (opcional)
 
 1. No Telegram, fale com **@BotFather**, execute `/newbot` e escolha nome e usuário.
 2. Copie o token retornado e envie `/start` para o seu bot.
