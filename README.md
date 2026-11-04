@@ -7,6 +7,8 @@
 
 Pipeline de telemetria e detecção para **Blue Team / Purple Teaming**: três honeypots em Python (SSH, HTTP e FTP) geram eventos JSON, o Wazuh aplica **11 regras de correlação customizadas** e o alerta pode chegar ao Telegram (opcional). O Wazuh Dashboard consolida a triagem em cinco painéis.
 
+![Social Preview](docs/img/social-preview.png)
+
 > **Escopo:** laboratório reproduzível com Docker Compose. Wazuh 4.7.2, testado no Windows (Docker Desktop e Git Bash) e em um clone limpo no Linux. Não é uma configuração de produção.
 
 > **Telegram é opcional:** o projeto sobe, detecta e é testável sem bot, sem token e sem enviar mensagem. A seção [Testando sem Telegram](#2-testando-sem-telegram) mostra o caminho com `--dry-run`. Para receber alertas reais, crie o seu próprio bot no @BotFather e preencha o `alerting/.env` local — nunca faça commit desse arquivo.
